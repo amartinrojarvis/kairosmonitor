@@ -1,10 +1,19 @@
 use crate::config::Config;
 use serde_json::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerKind {
+    Kairos,
+    OpenAI,
+}
 #[derive(Debug, Clone)]
 pub struct Sample {
     pub data: Value,
     pub tps: f64,
+    pub kind: ServerKind,
+    pub models: Vec<String>,
+    pub selected_service: String,
+    pub endpoint: String,
 }
 pub fn number(v: &Value) -> f64 {
     v.as_f64()
@@ -18,6 +27,25 @@ pub fn string(v: &Value) -> String {
         .unwrap_or("--")
         .to_owned()
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AlertLevel {
+    Normal,
+    Warning,
+    Critical,
+}
+impl AlertLevel {
+    pub fn for_value(value: f64, warn: f64, critical: f64) -> Self {
+        if !value.is_finite() || value < 0. {
+            Self::Normal
+        } else if value >= critical {
+            Self::Critical
+        } else if value >= warn {
+            Self::Warning
+        } else {
+            Self::Normal
+        }
+    }
+}
 impl Sample {
     pub fn parse(raw: &[u8], service: &str) -> Result<Self, String> {
         let data: Value = serde_json::from_slice(raw).map_err(|_| "JSON inválido".to_string())?;
@@ -26,9 +54,32 @@ impl Sample {
         }
         let tp = &data["vllmThroughput"];
         let mut tps = number(&tp["tps"]);
+        let models = discover_kairos_models(&data);
+        let selected_service = if service == "auto" {
+            data["services"]
+                .as_array()
+                .and_then(|items| {
+                    items
+                        .iter()
+                        .find(|v| v["model"].is_string() && v["model"] == tp["model"])
+                        .or_else(|| {
+                            items.iter().find(|v| {
+                                v["running"] != false
+                                    && v["model"]
+                                        .as_str()
+                                        .is_some_and(|m| models.iter().any(|known| known == m))
+                            })
+                        })
+                })
+                .and_then(|v| v["id"].as_str())
+                .unwrap_or("")
+                .to_owned()
+        } else {
+            service.to_owned()
+        };
         let svc = data["services"]
             .as_array()
-            .and_then(|a| a.iter().find(|v| v["id"] == service));
+            .and_then(|a| a.iter().find(|v| v["id"] == selected_service));
         if tp["ready"] == false || tp["ok"] == false || svc.is_some_and(|s| s["running"] == false) {
             tps = -1.;
         }
@@ -38,7 +89,54 @@ impl Sample {
         {
             return Err("Sin métricas en la respuesta".into());
         }
-        Ok(Self { data, tps })
+        Ok(Self {
+            data,
+            tps,
+            kind: ServerKind::Kairos,
+            models,
+            selected_service,
+            endpoint: String::new(),
+        })
+    }
+    pub fn from_openai(raw: &[u8], host: &str) -> Result<Self, String> {
+        let catalog: Value =
+            serde_json::from_slice(raw).map_err(|_| "JSON inválido".to_string())?;
+        let entries = catalog
+            .get("data")
+            .and_then(Value::as_array)
+            .ok_or("El servidor no devuelve un catálogo de modelos compatible con OpenAI")?;
+        if catalog["object"] != "list" && entries.is_empty() {
+            return Err("Catálogo de modelos no válido".into());
+        }
+        let mut models = Vec::new();
+        for entry in entries {
+            let name = entry["id"]
+                .as_str()
+                .filter(|s| !s.trim().is_empty())
+                .ok_or("Catálogo con un modelo sin identificador")?;
+            if !models.iter().any(|m| m == name) {
+                models.push(name.to_owned());
+            }
+        }
+        let data = serde_json::json!({"hostname":host,"vllmThroughput":{"model":models.first().cloned().unwrap_or_default()}});
+        Ok(Self {
+            data,
+            tps: -1.,
+            kind: ServerKind::OpenAI,
+            models,
+            selected_service: String::new(),
+            endpoint: String::new(),
+        })
+    }
+    pub fn active_service(&self) -> &Value {
+        self.service(&self.selected_service)
+    }
+    pub fn model_summary(&self) -> String {
+        if self.models.is_empty() {
+            "Sin modelos activos".into()
+        } else {
+            self.models.join(" · ")
+        }
     }
     pub fn n(&self, path: &str) -> f64 {
         number(self.data.pointer(path).unwrap_or(&Value::Null))
@@ -79,13 +177,104 @@ impl Sample {
             labels.join("  ")
         }
     }
+    pub fn bar_alerts(&self, c: &Config) -> [AlertLevel; 3] {
+        [
+            AlertLevel::for_value(self.n("/gpu/0/utilization"), c.gpu_warn, c.gpu_danger).max(
+                AlertLevel::for_value(self.n("/gpu/0/temperature"), c.temp_warn, c.temp_danger),
+            ),
+            AlertLevel::for_value(self.n("/memory/percent"), c.mem_warn, c.mem_danger),
+            // A high generation rate is throughput, not resource pressure.
+            AlertLevel::Normal,
+        ]
+    }
+    pub fn alert_summary(&self, c: &Config) -> String {
+        let mut causes = Vec::new();
+        for (name, value, unit, warn, critical) in [
+            (
+                "Uso de GPU",
+                self.n("/gpu/0/utilization"),
+                "%",
+                c.gpu_warn,
+                c.gpu_danger,
+            ),
+            (
+                "Temperatura de GPU",
+                self.n("/gpu/0/temperature"),
+                " °C",
+                c.temp_warn,
+                c.temp_danger,
+            ),
+            (
+                "RAM",
+                self.n("/memory/percent"),
+                "%",
+                c.mem_warn,
+                c.mem_danger,
+            ),
+        ] {
+            let level = AlertLevel::for_value(value, warn, critical);
+            if level != AlertLevel::Normal {
+                causes.push(format!(
+                    "{name}: {}{unit} ({})",
+                    decimal(value),
+                    if level == AlertLevel::Critical {
+                        "umbral crítico"
+                    } else {
+                        "aviso"
+                    }
+                ));
+            }
+        }
+        causes.join(" · ")
+    }
     pub fn bar(&self) -> [String; 3] {
         [
-            percent(self.n("/gpu/0/utilization")),
+            if self.n("/gpu/0/utilization") > 100. {
+                ">100".into()
+            } else {
+                percent(self.n("/gpu/0/utilization"))
+            },
             gib_short(self.n("/memory/used")),
             compact(self.tps),
         ]
     }
+}
+fn discover_kairos_models(data: &Value) -> Vec<String> {
+    let mut models = Vec::new();
+    if let Some(services) = data["services"].as_array() {
+        for service in services {
+            if service["running"] == false {
+                continue;
+            }
+            if let Some(model) = service["model"].as_str().filter(|m| !m.trim().is_empty()) {
+                // Router aliases pointing to another service are not additional model names.
+                if !services.iter().any(|s| s["id"] == model) && !models.iter().any(|m| m == model)
+                {
+                    models.push(model.to_owned());
+                }
+            }
+        }
+    }
+    let throughput = &data["vllmThroughput"];
+    if throughput["ready"] != false
+        && throughput["ok"] != false
+        && let Some(model) = throughput["model"]
+            .as_str()
+            .filter(|m| !m.trim().is_empty())
+    {
+        let stopped = data["services"].as_array().is_some_and(|services| {
+            services
+                .iter()
+                .any(|s| s["model"] == model && s["running"] == false)
+                && !services
+                    .iter()
+                    .any(|s| s["model"] == model && s["running"] == true)
+        });
+        if !stopped && !models.iter().any(|m| m == model) {
+            models.push(model.to_owned());
+        }
+    }
+    models
 }
 pub fn decimal(n: f64) -> String {
     if n < 0. || !n.is_finite() {
@@ -104,7 +293,17 @@ pub fn compact(n: f64) -> String {
     if n < 0. || !n.is_finite() {
         return "—".into();
     }
-    for (scale, suffix) in [(1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "k")] {
+    if n >= 999.5e18 {
+        return ">99E".into();
+    }
+    for (scale, suffix) in [
+        (1e18, "E"),
+        (1e15, "P"),
+        (1e12, "T"),
+        (1e9, "B"),
+        (1e6, "M"),
+        (1e3, "k"),
+    ] {
         if n >= scale * 0.9995 {
             return format!("{}{suffix}", decimal(n / scale));
         }
@@ -126,11 +325,17 @@ pub fn gib(n: f64) -> String {
     }
 }
 pub fn gib_short(n: f64) -> String {
-    if n < 0. {
-        "--".into()
-    } else {
-        format!("{}G", compact(n / 1073741824.))
+    if n < 0. || !n.is_finite() {
+        return "—".into();
     }
+    let mut value = n / 1073741824.;
+    for unit in ["G", "T", "P", "E"] {
+        if value < 999.5 {
+            return format!("{}{unit}", decimal(value));
+        }
+        value /= 1024.;
+    }
+    ">99E".into()
 }
 pub fn rate(n: f64) -> String {
     if n < 0. {
@@ -205,6 +410,84 @@ mod tests {
         assert_eq!(s.tps, -1.);
     }
     #[test]
+    fn detects_models_and_service_without_manual_ids() {
+        let s = Sample::parse(include_bytes!("../tests/fixtures/metrics.json"), "auto").unwrap();
+        assert_eq!(s.models, ["Qwen3.8-Flash-Next"]);
+        assert_eq!(s.selected_service, "vllmcritic");
+        let s = Sample::parse(br#"{"memory":{"percent":20},"services":[{"id":"other","model":"Model A","running":true},{"id":"router","model":"other","running":true},{"id":"stopped","model":"Model B","running":false}],"vllmThroughput":{"model":"Model A","tps":15}}"#, "auto").unwrap();
+        assert_eq!(s.selected_service, "other");
+        assert_eq!(s.models, ["Model A"]);
+        let s = Sample::parse(br#"{"memory":{"percent":20},"services":[{"id":"other","model":"Model A","running":false}],"vllmThroughput":{"model":"Model A","tps":15}}"#, "auto").unwrap();
+        assert_eq!(s.tps, -1.);
+        assert!(s.models.is_empty());
+    }
+    #[test]
+    fn openai_catalog_deduplicates_without_inventing_telemetry() {
+        let s = Sample::from_openai(
+            br#"{"object":"list","data":[{"id":"model-a"},{"id":"model-b"},{"id":"model-a"}]}"#,
+            "server",
+        )
+        .unwrap();
+        assert_eq!(s.models, ["model-a", "model-b"]);
+        assert_eq!(s.kind, ServerKind::OpenAI);
+        assert_eq!(s.tps, -1.);
+        assert_eq!(s.n("/memory/percent"), -1.);
+        assert_eq!(s.bar_alerts(&Config::default()), [AlertLevel::Normal; 3]);
+        assert!(
+            Sample::from_openai(br#"{"object":"list","data":[]}"#, "server")
+                .unwrap()
+                .models
+                .is_empty()
+        );
+        assert!(Sample::from_openai(br#"{"data":[{}]}"#, "server").is_err());
+        assert!(Sample::from_openai(br#"{"data":[]}"#, "server").is_err());
+    }
+    #[test]
+    fn warning_boundaries_and_unknown_values() {
+        for (value, expected) in [
+            (84.9, AlertLevel::Normal),
+            (85., AlertLevel::Warning),
+            (94.9, AlertLevel::Warning),
+            (95., AlertLevel::Critical),
+            (-1., AlertLevel::Normal),
+            (f64::NAN, AlertLevel::Normal),
+        ] {
+            assert_eq!(AlertLevel::for_value(value, 85., 95.), expected);
+        }
+    }
+    #[test]
+    fn alerts_follow_temperature_and_pressure_even_when_displayed_values_are_unchanged() {
+        let c = Config::default();
+        let mut s =
+            Sample::parse(include_bytes!("../tests/fixtures/metrics.json"), &c.service).unwrap();
+        let values = s.bar();
+        s.data["gpu"][0]["temperature"] = serde_json::json!(c.temp_warn);
+        assert_eq!(
+            s.bar_alerts(&c),
+            [AlertLevel::Warning, AlertLevel::Normal, AlertLevel::Normal]
+        );
+        s.data["gpu"][0]["temperature"] = serde_json::json!(c.temp_danger);
+        s.data["memory"]["percent"] = serde_json::json!(c.mem_danger);
+        assert_eq!(s.bar(), values);
+        assert_eq!(
+            s.bar_alerts(&c),
+            [
+                AlertLevel::Critical,
+                AlertLevel::Critical,
+                AlertLevel::Normal
+            ]
+        );
+        s.data["gpu"][0]["temperature"] = serde_json::Value::Null;
+        s.data["gpu"][0]["utilization"] = serde_json::json!(c.gpu_warn);
+        s.tps = 10000.;
+        assert_eq!(s.bar_alerts(&c)[0], AlertLevel::Warning);
+        assert_eq!(s.bar_alerts(&c)[2], AlertLevel::Normal);
+        s.data["memory"]["percent"] = serde_json::json!(10);
+        s.data["gpu"][0]["utilization"] = serde_json::json!(0);
+        assert_eq!(s.bar_alerts(&c), [AlertLevel::Normal; 3]);
+        assert!(s.alert_summary(&c).is_empty());
+    }
+    #[test]
     fn formatting() {
         assert_eq!(decimal(0.), "0");
         assert_eq!(decimal(9.95), "10");
@@ -216,5 +499,17 @@ mod tests {
         assert_eq!(compact(1234.), "1.2k");
         assert_eq!(compact(999_999.), "1M");
         assert_eq!(compact(-1.), "—");
+        assert_eq!(compact(999.5e18), ">99E");
+        for exponent in 0..=21 {
+            for multiplier in [0.9994, 0.9995, 1., 9.95, 999.49, 999.5] {
+                assert!(compact(multiplier * 10_f64.powi(exponent)).chars().count() <= 4);
+                assert!(
+                    gib_short(multiplier * 10_f64.powi(exponent))
+                        .chars()
+                        .count()
+                        <= 4
+                );
+            }
+        }
     }
 }

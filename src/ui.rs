@@ -23,6 +23,7 @@ use std::{
 pub struct State {
     pub config: Config,
     pub sample: Option<Sample>,
+    pub kind: Option<model::ServerKind>,
     pub error: String,
     pub updated: String,
     pub history: VecDeque<(Instant, f64)>,
@@ -36,6 +37,7 @@ impl State {
             clock,
             config,
             sample: None,
+            kind: None,
             error: "esperando lectura…".into(),
             updated: String::new(),
             history: VecDeque::new(),
@@ -44,6 +46,7 @@ impl State {
     fn apply(&mut self, result: Result<Sample, String>) {
         match result {
             Ok(s) => {
+                self.kind = Some(s.kind);
                 self.history.push_back((Instant::now(), s.tps));
                 self.sample = Some(s);
                 self.error.clear();
@@ -62,15 +65,23 @@ impl State {
     fn summary(&self) -> String {
         match &self.sample {
             Some(s) => {
+                if s.kind == model::ServerKind::OpenAI {
+                    return format!(
+                        "{} · OpenAI compatible\n{}\nSin telemetría de hardware",
+                        s.s("/hostname"),
+                        s.model_summary()
+                    );
+                }
                 let b = s.bar();
                 format!(
-                    "Kairos · GPU {} · RAM {} · {} tok/s. CPU {}. Modelo {}. {}",
+                    "Kairos · GPU {} · RAM {} · {} tok/s. CPU {}. Modelo {}. {}\n{}",
                     b[0],
                     b[1],
                     b[2],
                     model::percent(s.n("/cpu/percent")),
-                    s.s("/vllmThroughput/model"),
-                    s.consumers()
+                    s.model_summary(),
+                    s.consumers(),
+                    s.alert_summary(&self.config)
                 )
             }
             None => format!("Kairos · {}", self.error),
@@ -99,14 +110,74 @@ impl PanelView {
         unsafe { msg_send![super(this),initWithFrame:rect(0.,0.,drawing::WIDTH,h)] }
     }
 }
+struct AlertOverlayIvars {
+    values: RefCell<Vec<drawing::AlertValue>>,
+}
+define_class!(
+    // Only the affected numerals are painted here; the button retains its native template.
+    #[unsafe(super = NSView)]
+    #[thread_kind = MainThreadOnly]
+    #[ivars = AlertOverlayIvars]
+    struct AlertOverlay;
+    unsafe impl NSObjectProtocol for AlertOverlay {}
+    impl AlertOverlay {
+        #[unsafe(method(isFlipped))] fn flipped(&self) -> bool { true }
+        // Let the status button receive all mouse actions, including over colored numerals.
+        #[unsafe(method(hitTest:))] fn hit_test(&self, _point: NSPoint) -> *mut NSView { std::ptr::null_mut() }
+        #[unsafe(method(viewDidChangeEffectiveAppearance))]
+        fn appearance_changed(&self) {
+            unsafe { let _: () = msg_send![super(self), viewDidChangeEffectiveAppearance]; }
+            self.setNeedsDisplay(true);
+        }
+        #[unsafe(method(drawRect:))]
+        fn draw(&self, _dirty: NSRect) {
+            let dark = self.effectiveAppearance().bestMatchFromAppearancesWithNames(
+                &NSArray::from_slice(&[unsafe { NSAppearanceNameAqua }, unsafe { NSAppearanceNameDarkAqua }]),
+            ).is_some_and(|name| &*name == unsafe { NSAppearanceNameDarkAqua });
+            drawing::alert_values(&self.ivars().values.borrow(), dark, NSPoint::new(0., 0.));
+        }
+    }
+);
+impl AlertOverlay {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(AlertOverlayIvars {
+            values: RefCell::new(Vec::new()),
+        });
+        let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: NSRect::ZERO] };
+        this.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewMinXMargin
+                | NSAutoresizingMaskOptions::ViewMaxXMargin
+                | NSAutoresizingMaskOptions::ViewMinYMargin
+                | NSAutoresizingMaskOptions::ViewMaxYMargin,
+        );
+        this.setAccessibilityElement(false);
+        this
+    }
+    fn update(&self, button: &NSStatusBarButton, artwork: &drawing::BarArtwork) {
+        let size = artwork.image.size();
+        let bounds = button.bounds();
+        self.setFrame(rect(
+            (bounds.size.width - size.width) / 2.,
+            (bounds.size.height - size.height) / 2.,
+            size.width,
+            size.height,
+        ));
+    }
+}
+struct ProbeReply {
+    input: String,
+    result: Result<Sample, String>,
+}
 struct AppIvars {
     state: Rc<RefCell<State>>,
     status: OnceCell<Retained<NSStatusItem>>,
+    alerts: OnceCell<Retained<AlertOverlay>>,
     popover: OnceCell<Retained<NSPopover>>,
     panel: OnceCell<Retained<PanelView>>,
-    tx: Sender<(u64, Config)>,
+    tx: Sender<(Option<u64>, Config)>,
     rx: Receiver<(u64, Result<Sample, String>)>,
     revision: Cell<u64>,
+    probe_rx: Receiver<ProbeReply>,
     settings: OnceCell<crate::settings::Settings>,
     config_path: std::path::PathBuf,
     show_settings: bool,
@@ -156,6 +227,8 @@ define_class!(
         }
         #[unsafe(method(refresh:))] fn on_refresh(&self,_sender:&AnyObject){self.refresh();}
         #[unsafe(method(dashboard:))] fn on_dashboard(&self,_sender:&AnyObject){self.dashboard();}
+        #[unsafe(method(testConnection:))] fn test_connection(&self, _sender: &AnyObject) { self.probe(); }
+        #[unsafe(method(probeReady:))] fn probe_ready(&self, _note: &NSNotification) { self.probe_result(); }
         #[unsafe(method(settings:))] fn on_settings(&self,_sender:&AnyObject){self.open_settings();}
         #[unsafe(method(saveSettings:))] fn on_save_settings(&self,_sender:&AnyObject){self.save_settings();}
         #[unsafe(method(cancelSettings:))] fn on_cancel_settings(&self,_sender:&AnyObject){if let Some(s)=self.ivars().settings.get(){s.close();}}
@@ -171,6 +244,10 @@ impl App {
         let status =
             NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength);
         let button = status.button(mtm).expect("status button");
+        button.setImageScaling(NSImageScaling::ScaleNone);
+        let alerts = AlertOverlay::new(mtm);
+        button.addSubview(&alerts);
+        iv.alerts.set(alerts).ok();
         // SAFETY: the target is this retained delegate; selectors have the matching action signature.
         unsafe {
             button.setTarget(Some(self));
@@ -223,6 +300,12 @@ impl App {
                 Some(ns_string!("KairosMetricsReady")),
                 None,
             );
+            NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                self,
+                sel!(probeReady:),
+                Some(ns_string!("KairosProbeReady")),
+                None,
+            );
         }
         self.redraw();
         self.refresh();
@@ -269,7 +352,7 @@ impl App {
         }
         if iv
             .tx
-            .send((iv.revision.get(), iv.state.borrow().config.clone()))
+            .send((Some(iv.revision.get()), iv.state.borrow().config.clone()))
             .is_err()
         {
             iv.busy.set(false);
@@ -296,21 +379,34 @@ impl App {
     fn redraw(&self) {
         let iv = self.ivars();
         let state = iv.state.borrow();
+        if let Some(settings) = iv.settings.get()
+            && let Some(sample) = &state.sample
+        {
+            settings.update_models(&state.config.url, sample);
+        }
         if let Some(button) = iv.status.get().and_then(|s| s.button(self.mtm())) {
             let key = format!(
-                "{:?}:{}:{}:{}",
+                "{:?}:{:?}:{:?}:{:?}:{}:{}:{}",
                 state.sample.as_ref().map(Sample::bar),
+                state.sample.as_ref().map(|s| s.bar_alerts(&state.config)),
+                state.kind,
+                state.sample.as_ref().map(|s| &s.models),
                 state.config.show_gpu,
                 state.config.show_memory,
                 state.config.show_tps
             );
             if *iv.last_bar.borrow() != key {
-                let image = drawing::bar(&state);
+                let artwork = drawing::bar(&state);
                 iv.status
                     .get()
                     .unwrap()
-                    .setLength(image.size().width + 2. * drawing::BAR_PADDING);
-                button.setImage(Some(&image));
+                    .setLength(artwork.image.size().width + 2. * drawing::BAR_PADDING);
+                button.setImage(Some(&artwork.image));
+                if let Some(overlay) = iv.alerts.get() {
+                    overlay.update(&button, &artwork);
+                    *overlay.ivars().values.borrow_mut() = artwork.alerts;
+                    overlay.setNeedsDisplay(true);
+                }
                 *iv.last_bar.borrow_mut() = key;
             }
             button.setToolTip(Some(&NSString::from_str(&format!(
@@ -324,6 +420,13 @@ impl App {
                 panel.setNeedsDisplay(true);
             }
             panel.setAccessibilityLabel(Some(&NSString::from_str(&state.summary())));
+            panel.setToolTip(
+                state
+                    .sample
+                    .as_ref()
+                    .map(|s| NSString::from_str(&s.model_summary()))
+                    .as_deref(),
+            );
         }
     }
     fn toggle(&self) {
@@ -346,6 +449,37 @@ impl App {
             }
         }
     }
+    fn probe(&self) {
+        let iv = self.ivars();
+        let Some(settings) = iv.settings.get() else {
+            return;
+        };
+        let c = match settings.probe_config(&iv.state.borrow().config) {
+            Ok(c) => c,
+            Err(e) => {
+                settings.error(&e);
+                return;
+            }
+        };
+        if !settings.begin_probe() {
+            return;
+        }
+        let input = c.url.clone();
+        // Probes and polling share the worker and its persistent HTTP session.
+        if iv.tx.send((None, c)).is_err() {
+            settings.finish_probe(
+                &input,
+                &Err("El servicio de conexión no está disponible".into()),
+            );
+        }
+    }
+    fn probe_result(&self) {
+        while let Ok(reply) = self.ivars().probe_rx.try_recv() {
+            if let Some(settings) = self.ivars().settings.get() {
+                settings.finish_probe(&reply.input, &reply.result);
+            }
+        }
+    }
     fn open_settings(&self) {
         let iv = self.ivars();
         if let Some(p) = iv.popover.get() {
@@ -354,7 +488,11 @@ impl App {
         let settings = iv
             .settings
             .get_or_init(|| crate::settings::Settings::new(self.mtm(), self));
-        settings.show(&iv.state.borrow().config);
+        let state = iv.state.borrow();
+        settings.show(&state.config);
+        if let Some(sample) = &state.sample {
+            settings.update_models(&state.config.url, sample);
+        }
     }
     fn save_settings(&self) {
         let iv = self.ivars();
@@ -387,6 +525,7 @@ impl App {
             let mut state = iv.state.borrow_mut();
             if state.config.url != config.url || state.config.service != config.service {
                 state.sample = None;
+                state.kind = None;
                 state.history.clear();
                 state.error = "esperando lectura…".into();
             }
@@ -425,21 +564,32 @@ pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_set
     application.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
     let (tx, requests) = mpsc::channel();
     let (results, rx) = mpsc::channel();
+    let (probe_tx, probe_rx) = mpsc::channel();
     std::thread::spawn(move || {
         let client = model::Client::new();
         while let Ok((revision, worker_config)) = requests.recv() {
-            if results
-                .send((
-                    revision,
-                    objc2::rc::autoreleasepool(|_| client.fetch(&worker_config)),
-                ))
-                .is_err()
-            {
-                break;
-            }
-            let notify = block2::RcBlock::new(|| unsafe {
+            let notification = if let Some(revision) = revision {
+                let result = objc2::rc::autoreleasepool(|_| client.fetch(&worker_config));
+                if results.send((revision, result)).is_err() {
+                    break;
+                }
+                "KairosMetricsReady"
+            } else {
+                let result = objc2::rc::autoreleasepool(|_| client.probe(&worker_config));
+                if probe_tx
+                    .send(ProbeReply {
+                        input: worker_config.url,
+                        result,
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                "KairosProbeReady"
+            };
+            let notify = block2::RcBlock::new(move || unsafe {
                 NSNotificationCenter::defaultCenter()
-                    .postNotificationName_object(ns_string!("KairosMetricsReady"), None);
+                    .postNotificationName_object(&NSString::from_str(notification), None);
             });
             // No AppKit objects cross threads; the main queue delivers the notification.
             unsafe {
@@ -450,11 +600,13 @@ pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_set
     let delegate = App::alloc(mtm).set_ivars(AppIvars {
         state: Rc::new(RefCell::new(State::new(config))),
         status: OnceCell::new(),
+        alerts: OnceCell::new(),
         popover: OnceCell::new(),
         panel: OnceCell::new(),
         tx,
         rx,
         revision: Cell::new(0),
+        probe_rx,
         settings: OnceCell::new(),
         config_path,
         show_settings,
@@ -490,30 +642,48 @@ pub fn snapshot(config: Config, sample: Result<Sample, String>, path: &str) {
     assert!(data.writeToFile_atomically(&NSString::from_str(path), true));
 }
 
-pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str) {
+pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str, dark: bool) {
     let mtm = MainThreadMarker::new().unwrap();
     let _app = NSApplication::sharedApplication(mtm);
     let mut state = State::new(config);
     state.apply(sample);
-    let bar = drawing::bar(&state);
+    let artwork = drawing::bar(&state);
+    let bar = &artwork.image;
     bar.setTemplate(false);
+    if dark {
+        #[allow(deprecated)]
+        bar.lockFocusFlipped(true);
+        NSColor::whiteColor().setFill();
+        NSRectFillUsingOperation(
+            rect(0., 0., bar.size().width, bar.size().height),
+            NSCompositingOperation::SourceIn,
+        );
+        #[allow(deprecated)]
+        bar.unlockFocus();
+    }
     let image = NSImage::initWithSize(
         NSImage::alloc(),
         NSSize::new(bar.size().width + 2. * drawing::BAR_PADDING, 28.),
     );
     #[allow(deprecated)]
     image.lockFocusFlipped(true);
-    drawing::fill(
-        rect(0., 0., image.size().width, 28.),
-        &NSColor::whiteColor(),
-        0.,
-    );
+    let background = if dark {
+        drawing::color("#24262B", 1.)
+    } else {
+        NSColor::whiteColor()
+    };
+    drawing::fill(rect(0., 0., image.size().width, 28.), &background, 0.);
     bar.drawInRect(rect(
         drawing::BAR_PADDING,
         5.,
         bar.size().width,
         bar.size().height,
     ));
+    drawing::alert_values(
+        &artwork.alerts,
+        dark,
+        NSPoint::new(drawing::BAR_PADDING, 5.),
+    );
     #[allow(deprecated)]
     image.unlockFocus();
     let bitmap = NSBitmapImageRep::imageRepWithData(&image.TIFFRepresentation().unwrap()).unwrap();
@@ -522,4 +692,83 @@ pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str) 
     }
     .unwrap();
     assert!(data.writeToFile_atomically(&NSString::from_str(path), true));
+}
+
+/// Render the actual status button and alert overlay for native layout/appearance QA.
+pub fn snapshot_native_bar(
+    config: Config,
+    sample: Result<Sample, String>,
+    path: &str,
+    dark: bool,
+    selected: bool,
+) {
+    let mtm = MainThreadMarker::new().unwrap();
+    let app = NSApplication::sharedApplication(mtm);
+    app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    let mut state = State::new(config);
+    state.apply(sample);
+    let artwork = drawing::bar(&state);
+    let status = NSStatusBar::systemStatusBar()
+        .statusItemWithLength(artwork.image.size().width + 2. * drawing::BAR_PADDING);
+    let button = status.button(mtm).unwrap();
+    button.setAppearance(
+        NSAppearance::appearanceNamed(unsafe {
+            if dark {
+                NSAppearanceNameDarkAqua
+            } else {
+                NSAppearanceNameAqua
+            }
+        })
+        .as_deref(),
+    );
+    button.setImageScaling(NSImageScaling::ScaleNone);
+    button.setImage(Some(&artwork.image));
+    unsafe {
+        button.setTarget(Some(&app));
+        button.setAction(Some(sel!(stop:)));
+    }
+    button.highlight(selected);
+    let overlay = AlertOverlay::new(mtm);
+    button.addSubview(&overlay);
+    overlay.update(&button, &artwork);
+    *overlay.ivars().values.borrow_mut() = artwork.alerts;
+    button.layoutSubtreeIfNeeded();
+    for value in overlay.ivars().values.borrow().iter() {
+        let point = NSPoint::new(
+            overlay.frame().origin.x + value.frame.origin.x + 2.,
+            button.bounds().size.height / 2.,
+        );
+        let hit = button
+            .hitTest(point)
+            .expect("the status button must remain clickable");
+        assert!(
+            hit.downcast_ref::<AlertOverlay>().is_none(),
+            "color overlay intercepted mouse events"
+        );
+    }
+    let bitmap = button
+        .bitmapImageRepForCachingDisplayInRect(button.bounds())
+        .unwrap();
+    button.cacheDisplayInRect_toBitmapImageRep(button.bounds(), &bitmap);
+    let native = NSImage::initWithSize(NSImage::alloc(), button.bounds().size);
+    native.addRepresentation(&bitmap);
+    let image = NSImage::initWithSize(NSImage::alloc(), button.bounds().size);
+    #[allow(deprecated)]
+    image.lockFocusFlipped(true);
+    let background = if dark {
+        drawing::color("#24262B", 1.)
+    } else {
+        NSColor::whiteColor()
+    };
+    drawing::fill(button.bounds(), &background, 0.);
+    native.drawInRect(button.bounds());
+    #[allow(deprecated)]
+    image.unlockFocus();
+    let bitmap = NSBitmapImageRep::imageRepWithData(&image.TIFFRepresentation().unwrap()).unwrap();
+    let data = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
+    }
+    .unwrap();
+    assert!(data.writeToFile_atomically(&NSString::from_str(path), true));
+    NSStatusBar::systemStatusBar().removeStatusItem(&status);
 }

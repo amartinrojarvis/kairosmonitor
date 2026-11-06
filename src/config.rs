@@ -10,6 +10,8 @@ pub struct Config {
     pub interval: u64,
     pub open_interval: u64,
     pub timeout: u64,
+    pub gpu_warn: f64,
+    pub gpu_danger: f64,
     pub mem_warn: f64,
     pub mem_danger: f64,
     pub temp_warn: f64,
@@ -35,10 +37,12 @@ impl Default for Config {
         Self {
             url: "http://kairos:8787/api/metrics".into(),
             dashboard: "http://kairos:8787/".into(),
-            service: "vllmcritic".into(),
+            service: "auto".into(),
             interval: 5,
             open_interval: 2,
             timeout: 4,
+            gpu_warn: 85.,
+            gpu_danger: 95.,
             mem_warn: 85.,
             mem_danger: 95.,
             temp_warn: 78.,
@@ -122,13 +126,23 @@ impl Config {
                 return Err("Alfa fuera de rango".into());
             }
         }
-        for threshold in [c.mem_warn, c.mem_danger, c.temp_warn, c.temp_danger] {
+        for threshold in [
+            c.gpu_warn,
+            c.gpu_danger,
+            c.mem_warn,
+            c.mem_danger,
+            c.temp_warn,
+            c.temp_danger,
+        ] {
             if !threshold.is_finite() || threshold < 0. {
                 return Err("Umbral inválido".into());
             }
         }
         if c.service.trim().is_empty() {
             return Err("El servicio no puede estar vacío".into());
+        }
+        if c.gpu_warn > 100. || c.gpu_danger > 100. || c.gpu_warn >= c.gpu_danger {
+            return Err("GPU: el aviso debe ser menor que el crítico (0–100 %)".into());
         }
         if c.mem_warn > 100. || c.mem_danger > 100. || c.mem_warn >= c.mem_danger {
             return Err("RAM: el aviso debe ser menor que el crítico (0–100 %)".into());
@@ -220,6 +234,9 @@ mod tests {
             ("url", "http://"),
             ("url", "file:///etc/passwd"),
             ("memWarn", "99"),
+            ("gpuWarn", "99"),
+            ("gpuDanger", "101"),
+            ("gpuWarn", "NaN"),
             ("tempDanger", "40"),
             ("memWarn", "NaN"),
             ("service", ""),

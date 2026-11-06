@@ -4,7 +4,10 @@ use objc2::{
     AnyThread, DefinedClass, define_class, msg_send, rc::Retained, runtime::ProtocolObject,
 };
 use objc2_foundation::*;
-use std::sync::{Mutex, mpsc};
+use std::{
+    cell::RefCell,
+    sync::{Mutex, mpsc},
+};
 
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 struct Transfer {
@@ -96,6 +99,7 @@ define_class!(
 pub struct Client {
     session: Retained<NSURLSession>,
     delegate: Retained<NetworkDelegate>,
+    endpoint: RefCell<Option<(String, String)>>,
 }
 impl Client {
     pub fn new() -> Self {
@@ -114,14 +118,62 @@ impl Client {
                 None,
             )
         };
-        Self { session, delegate }
+        Self {
+            session,
+            delegate,
+            endpoint: RefCell::new(None),
+        }
+    }
+    pub fn probe(&self, c: &Config) -> Result<Sample, String> {
+        self.endpoint.borrow_mut().take();
+        self.fetch(c)
     }
     pub fn fetch(&self, c: &Config) -> Result<Sample, String> {
-        let url = NSURL::URLWithString(&NSString::from_str(&c.url)).ok_or("URL no válida")?;
+        let cached = self
+            .endpoint
+            .borrow()
+            .as_ref()
+            .filter(|(input, _)| input == &c.url)
+            .map(|(_, endpoint)| endpoint.clone());
+        let endpoints = if let Some(endpoint) = cached {
+            vec![endpoint]
+        } else {
+            endpoint_candidates(&c.url)?
+        };
+        let mut last_error = String::from("Sin respuesta compatible");
+        for endpoint in endpoints {
+            let bytes = match self.get(&endpoint, c.timeout) {
+                Ok(bytes) => bytes,
+                Err(e) if e.contains("HTTP 404") || e.contains("HTTP 405") => { last_error = e; continue; }
+                Err(e) if e.contains("HTTP 401") || e.contains("HTTP 403") => return Err("El servidor requiere autorización (HTTP 401/403). Esta versión admite endpoints accesibles sin clave API.".into()),
+                Err(e) => return Err(e),
+            };
+            let host = NSURL::URLWithString(&NSString::from_str(&endpoint))
+                .and_then(|url| url.host())
+                .map(|h| h.to_string())
+                .unwrap_or_default();
+            let sample = Sample::parse(&bytes, "auto").or_else(|kairos_error| {
+                Sample::from_openai(&bytes, &host).map_err(|_| kairos_error)
+            });
+            match sample {
+                Ok(mut sample) => {
+                    sample.endpoint = endpoint.clone();
+                    *self.endpoint.borrow_mut() = Some((c.url.clone(), endpoint));
+                    return Ok(sample);
+                }
+                Err(e) => last_error = e,
+            }
+        }
+        Err(format!(
+            "No se detectó un endpoint de Kairos ni un catálogo /v1/models · {last_error}"
+        ))
+    }
+    fn get(&self, endpoint: &str, timeout: u64) -> Result<Vec<u8>, String> {
+        let url = NSURL::URLWithString(&NSString::from_str(endpoint)).ok_or("URL no válida")?;
         let request = NSURLRequest::requestWithURL_cachePolicy_timeoutInterval(
             &url,
             NSURLRequestCachePolicy::ReloadIgnoringLocalCacheData,
-            c.timeout as f64,
+            timeout as f64,
         );
         let (sender, receiver) = mpsc::channel();
         let task = self.session.dataTaskWithRequest(&request);
@@ -133,16 +185,38 @@ impl Client {
         });
         task.resume();
         // A total deadline also covers a server that keeps dribbling partial data.
-        let result = receiver.recv_timeout(std::time::Duration::from_secs(c.timeout));
+        let result = receiver.recv_timeout(std::time::Duration::from_secs(timeout));
         match result {
-            Ok(Ok(bytes)) => Sample::parse(&bytes, &c.service),
-            Ok(Err(e)) => Err(format!("Kairos no responde · {e}")),
+            Ok(Ok(bytes)) => Ok(bytes),
+            Ok(Err(e)) => Err(format!("El servidor no responde · {e}")),
             Err(_) => {
                 task.cancel();
                 self.delegate.ivars().transfer.lock().unwrap().take();
-                Err("Kairos no responde · tiempo de espera agotado".into())
+                Err("El servidor no responde · tiempo de espera agotado".into())
             }
         }
+    }
+}
+fn endpoint_candidates(input: &str) -> Result<Vec<String>, String> {
+    let raw = input.trim();
+    let url = NSURL::URLWithString(&NSString::from_str(raw)).ok_or("URL no válida")?;
+    if url.host().is_none() {
+        return Err("La URL debe incluir un servidor".into());
+    }
+    let path = url.path().map(|p| p.to_string()).unwrap_or_default();
+    let base = raw.trim_end_matches('/');
+    if url.query().is_some() || url.fragment().is_some() {
+        return Ok(vec![raw.into()]);
+    }
+    if path.is_empty() || path == "/" {
+        Ok(vec![
+            format!("{base}/api/metrics"),
+            format!("{base}/v1/models"),
+        ])
+    } else if path.trim_end_matches('/').ends_with("/v1") {
+        Ok(vec![format!("{base}/models")])
+    } else {
+        Ok(vec![raw.into()])
     }
 }
 impl Drop for Client {
@@ -215,7 +289,7 @@ mod tests {
                 (
                     Vec::new(),
                     Duration::from_millis(1200),
-                    "Kairos no responde",
+                    "El servidor no responde",
                 ),
             ] {
                 let (c, thread) = server(bytes, delay);
@@ -238,6 +312,69 @@ mod tests {
         });
     }
 
+    #[test]
+    fn discovers_openai_from_base_url_and_reuses_resolved_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let c = Config {
+            url: format!("http://{}", listener.local_addr().unwrap()),
+            timeout: 2,
+            ..Config::default()
+        };
+        let server = thread::spawn(move || {
+            for expected in ["/api/metrics", "/v1/models", "/v1/models"] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    bytes.push(byte[0]);
+                }
+                assert!(
+                    String::from_utf8(bytes)
+                        .unwrap()
+                        .starts_with(&format!("GET {expected} "))
+                );
+                let (status, body) = if expected == "/api/metrics" {
+                    ("404 Not Found", "")
+                } else {
+                    (
+                        "200 OK",
+                        r#"{"object":"list","data":[{"id":"detected-model"}]}"#,
+                    )
+                };
+                write!(stream, "HTTP/1.1 {status}\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()).unwrap();
+            }
+        });
+        objc2::rc::autoreleasepool(|_| {
+            let client = Client::new();
+            for _ in 0..2 {
+                let s = client.fetch(&c).unwrap();
+                assert_eq!(s.models, ["detected-model"]);
+                assert_eq!(s.kind, crate::model::ServerKind::OpenAI);
+            }
+        });
+        server.join().unwrap();
+    }
+    #[test]
+    fn endpoint_resolution_preserves_explicit_urls_and_prefixes() {
+        objc2::rc::autoreleasepool(|_| {
+            assert_eq!(
+                endpoint_candidates("http://host:8000/").unwrap(),
+                ["http://host:8000/api/metrics", "http://host:8000/v1/models"]
+            );
+            assert_eq!(
+                endpoint_candidates("https://host/proxy/v1/").unwrap(),
+                ["https://host/proxy/v1/models"]
+            );
+            assert_eq!(
+                endpoint_candidates("https://host/custom/metrics?key=value").unwrap(),
+                ["https://host/custom/metrics?key=value"]
+            );
+        });
+    }
     #[test]
     fn native_http_reuses_connection_and_reads_fresh_data() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

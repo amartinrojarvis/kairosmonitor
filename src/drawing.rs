@@ -133,6 +133,10 @@ fn stat(label: &str, value: &str, x: f64, y: f64, w: f64, c: &Config) {
     );
 }
 pub fn panel(state: &State) {
+    if state.kind == Some(ServerKind::OpenAI) {
+        catalog_panel(state);
+        return;
+    }
     let c = &state.config;
     let sample = state.sample.as_ref();
     let online = sample.is_some();
@@ -223,7 +227,7 @@ pub fn panel(state: &State) {
         &tone(mem, c.mem_warn, c.mem_danger, c),
         c,
     );
-    let svc = sample.map(|s| s.service(&c.service));
+    let svc = sample.map(Sample::active_service);
     let service_status = match svc.and_then(|s| s["running"].as_bool()) {
         Some(true) => "servicio activo",
         Some(false) => "servicio detenido",
@@ -245,7 +249,7 @@ pub fn panel(state: &State) {
     );
     card(
         440.,
-        &format!("{} tps", c.service),
+        "tokens por segundo",
         &decimal(tps),
         if n("/vllmThroughput/maxTps") > 0. {
             tps / n("/vllmThroughput/maxTps")
@@ -361,23 +365,174 @@ pub fn panel(state: &State) {
         }
     }
 }
+fn catalog_panel(state: &State) {
+    let c = &state.config;
+    fill(
+        rect(0., 0., WIDTH, height(c)),
+        &color(&c.background, 0.94),
+        0.,
+    );
+    label(
+        "Kairos Monitor · API compatible con OpenAI",
+        20.,
+        17.,
+        620.,
+        c,
+    );
+    let title = state
+        .sample
+        .as_ref()
+        .map(|s| s.s("/hostname"))
+        .unwrap_or_else(|| "Servidor sin conexión".into());
+    text(
+        &title,
+        rect(20., 38., 620., 28.),
+        19.,
+        &color(&c.foreground, 1.),
+    );
+    let detail = if state.sample.is_some() {
+        format!("Conectado · actualizado {}", state.updated)
+    } else {
+        state.error.clone()
+    };
+    text(
+        &detail,
+        rect(20., 73., 620., 18.),
+        11.,
+        &color(&c.muted, 1.),
+    );
+    label("Modelos disponibles", 20., 112., 620., c);
+    let models = state
+        .sample
+        .as_ref()
+        .map(|s| s.models.as_slice())
+        .unwrap_or(&[]);
+    let capacity = ((height(c) - 220.) / 28.) as usize;
+    for (i, model) in models.iter().take(capacity).enumerate() {
+        let y = 141. + i as f64 * 28.;
+        fill(
+            rect(20., y - 3., 620., 25.),
+            &color(&c.foreground, if i % 2 == 0 { 0.035 } else { 0.015 }),
+            5.,
+        );
+        text(
+            model,
+            rect(30., y, 600., 22.),
+            13.,
+            &color(&c.foreground, 1.),
+        );
+    }
+    if models.is_empty() {
+        text(
+            if state.sample.is_some() {
+                "El servidor no anuncia modelos activos."
+            } else {
+                "Pulsa Refrescar o revisa la URL en Ajustes."
+            },
+            rect(20., 145., 620., 22.),
+            12.,
+            &color(&c.muted, 1.),
+        );
+    } else if models.len() > capacity {
+        text(
+            &format!(
+                "{} modelos más · lista completa en Ajustes",
+                models.len() - capacity
+            ),
+            rect(20., 141. + capacity as f64 * 28., 620., 20.),
+            11.,
+            &color(&c.muted, 1.),
+        );
+    }
+    text(
+        "Esta API no publica GPU, RAM ni tokens/s.",
+        rect(20., height(c) - 60., 620., 22.),
+        11.,
+        &color(&c.muted, 1.),
+    );
+}
 /// Transparent template: AppKit owns the background, selected state and light/dark tint.
 /// No custom pill/frame can collide with the status button's highlight.
 pub const BAR_PADDING: f64 = 4.;
-pub fn bar(state: &State) -> Retained<NSImage> {
+pub struct AlertValue {
+    pub value: String,
+    pub frame: NSRect,
+    pub level: AlertLevel,
+}
+pub struct BarArtwork {
+    pub image: Retained<NSImage>,
+    pub alerts: Vec<AlertValue>,
+}
+pub fn soft_alert_color(level: AlertLevel, dark: bool) -> Retained<NSColor> {
+    color(
+        match (level, dark) {
+            (AlertLevel::Warning, false) => "#936B37",
+            (AlertLevel::Warning, true) => "#D1AE78",
+            (AlertLevel::Critical, false) => "#A45256",
+            (AlertLevel::Critical, true) => "#D39396",
+            (AlertLevel::Normal, _) => unreachable!("only affected values use custom color"),
+        },
+        1.,
+    )
+}
+pub fn alert_values(values: &[AlertValue], dark: bool, offset: NSPoint) {
+    for value in values {
+        let mut frame = value.frame;
+        frame.origin.x += offset.x;
+        frame.origin.y += offset.y;
+        text(
+            &value.value,
+            frame,
+            11.,
+            &soft_alert_color(value.level, dark),
+        );
+    }
+}
+pub fn bar(state: &State) -> BarArtwork {
     let c = &state.config;
-    let values =
+    let catalog = state.kind == Some(ServerKind::OpenAI);
+    let values = if catalog {
+        [
+            state
+                .sample
+                .as_ref()
+                .map(|s| format!("{} modelos", compact(s.models.len() as f64)))
+                .unwrap_or_else(|| "— modelos".into()),
+            String::new(),
+            String::new(),
+        ]
+    } else {
         state
             .sample
             .as_ref()
             .map(Sample::bar)
-            .unwrap_or(["—".into(), "—".into(), "—".into()]);
-    let enabled = [c.show_gpu, c.show_memory, c.show_tps];
-    let names = ["cpu", "memorychip", "bolt.fill"];
+            .unwrap_or(["—".into(), "—".into(), "—".into()])
+    };
+    let levels = state
+        .sample
+        .as_ref()
+        .map(|s| s.bar_alerts(c))
+        .unwrap_or([AlertLevel::Normal; 3]);
+    let enabled = if catalog {
+        [true, false, false]
+    } else {
+        [c.show_gpu, c.show_memory, c.show_tps]
+    };
+    let names = if catalog {
+        ["cube", "", ""]
+    } else {
+        ["cpu", "memorychip", "bolt.fill"]
+    };
+    let capacities = if catalog {
+        ["9999 modelos", "", ""]
+    } else {
+        ["100%", "999G", "999M"]
+    };
     let font = NSFont::monospacedDigitSystemFontOfSize_weight(11., unsafe { NSFontWeightRegular });
     let attrs =
         NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[&*font as &AnyObject]);
-    // Measure the actual glyphs: no trailing empty value slot or padding per metric.
+    // Fixed, bounded numeric columns. Right alignment keeps both outside margins at 4 pt.
+    // Changes in digits, alert severity or connectivity never resize the menu-bar item.
     let mut items = Vec::new();
     for i in 0..3 {
         if !enabled[i] {
@@ -396,17 +551,32 @@ pub fn bar(state: &State) -> Retained<NSImage> {
             })
             .unwrap_or((0., 0.));
         // The font attribute contains a retained NSFont of the required type.
-        let text_width = unsafe { NSString::from_str(&values[i]).sizeWithAttributes(Some(&attrs)) }
-            .width
-            .ceil()
-            + 1.;
+        let text_width =
+            unsafe { NSString::from_str(capacities[i]).sizeWithAttributes(Some(&attrs)) }
+                .width
+                .ceil()
+                + 2.;
+        let actual_width =
+            unsafe { NSString::from_str(&values[i]).sizeWithAttributes(Some(&attrs)) }
+                .width
+                .ceil()
+                + 1.;
         let gap = if symbol.is_some() { 3. } else { 0. };
-        items.push((symbol, w, h, &values[i], text_width, gap));
+        items.push((
+            symbol,
+            w,
+            h,
+            &values[i],
+            text_width,
+            actual_width,
+            gap,
+            levels[i],
+        ));
     }
-    const SEPARATOR_GAP: f64 = 12.;
+    const SEPARATOR_GAP: f64 = 8.;
     let width = items
         .iter()
-        .map(|(_, w, _, _, tw, gap)| w + gap + tw)
+        .map(|(_, w, _, _, tw, _, gap, _)| w + gap + tw)
         .sum::<f64>()
         + SEPARATOR_GAP * items.len().saturating_sub(1) as f64;
     let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(width.max(1.), 18.));
@@ -414,8 +584,9 @@ pub fn bar(state: &State) -> Retained<NSImage> {
     image.lockFocusFlipped(true);
     let alpha = if state.sample.is_some() { 1. } else { 0.4 };
     let ink = NSColor::blackColor().colorWithAlphaComponent(alpha);
+    let mut alerts = Vec::new();
     let mut x = 0.;
-    for (index, (symbol, w, h, value, tw, gap)) in items.iter().enumerate() {
+    for (index, (symbol, w, h, value, tw, actual_width, gap, level)) in items.iter().enumerate() {
         if index > 0 {
             fill(
                 rect(x + SEPARATOR_GAP / 2. - 0.25, 4., 0.5, 10.),
@@ -436,11 +607,20 @@ pub fn bar(state: &State) -> Retained<NSImage> {
                 );
             }
         }
-        text(value, rect(x + w + gap, 1., *tw, 16.), 11., &ink);
+        let frame = rect(x + w + gap + tw - actual_width, 1., *actual_width, 16.);
+        if *level == AlertLevel::Normal {
+            text(value, frame, 11., &ink);
+        } else {
+            alerts.push(AlertValue {
+                value: (*value).clone(),
+                frame,
+                level: *level,
+            });
+        }
         x += w + gap + tw;
     }
     #[allow(deprecated)]
     image.unlockFocus();
     image.setTemplate(true);
-    image
+    BarArtwork { image, alerts }
 }

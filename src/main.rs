@@ -11,7 +11,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|s| s == "--help") {
         println!(
-            "KairosMonitor\n  --check              Consulta y verifica el endpoint\n  --open               Abre el panel al iniciar\n  --settings           Abre los ajustes al iniciar\n  --config RUTA        Configuración alternativa\n  --snapshot PNG       Renderiza una captura nativa\n  --snapshot-bar PNG   Vista de la barra\n  --snapshot-settings PNG  Vista de ajustes\n  --login-item status|on|off  Inicio de sesión\n  --fixture JSON       Datos locales para --snapshot\n  --offline            Sin conexión para --snapshot"
+            "KairosMonitor\n  --check              Consulta y verifica el endpoint\n  --open               Abre el panel al iniciar\n  --settings           Abre los ajustes al iniciar\n  --config RUTA        Configuración alternativa\n  --snapshot PNG       Renderiza una captura nativa\n  --snapshot-bar PNG   Vista de la barra\n  --native --dark --selected  Opciones de captura de la barra\n  --snapshot-settings PNG  Vista de ajustes\n  --login-item status|on|off  Inicio de sesión\n  --fixture JSON       Datos locales para --snapshot\n  --offline            Sin conexión para --snapshot"
         );
         return;
     }
@@ -31,6 +31,10 @@ fn main() {
     if args.iter().any(|s| s == "--check") {
         match model::fetch(&config) {
             Ok(s) => {
+                if s.kind == model::ServerKind::OpenAI {
+                    println!("{} · OpenAI compatible · {}", s.endpoint, s.model_summary());
+                    return;
+                }
                 println!(
                     "{} · GPU {} · RAM {} · {} tok/s",
                     s.s("/hostname"),
@@ -70,14 +74,23 @@ fn main() {
         let sample = if args.iter().any(|s| s == "--offline") {
             Err("Kairos no responde".into())
         } else if let Some(f) = value("--fixture") {
-            std::fs::read(f)
-                .map_err(|e| e.to_string())
-                .and_then(|d| model::Sample::parse(&d, &config.service))
+            std::fs::read(f).map_err(|e| e.to_string()).and_then(|d| {
+                model::Sample::parse(&d, "auto")
+                    .or_else(|_| model::Sample::from_openai(&d, "Servidor de modelos"))
+            })
         } else {
             model::fetch(&config)
         };
-        if value("--snapshot-bar").is_some() {
-            ui::snapshot_bar(config, sample, path);
+        if value("--snapshot-bar").is_some() && args.iter().any(|s| s == "--native") {
+            ui::snapshot_native_bar(
+                config,
+                sample,
+                path,
+                args.iter().any(|s| s == "--dark"),
+                args.iter().any(|s| s == "--selected"),
+            );
+        } else if value("--snapshot-bar").is_some() {
+            ui::snapshot_bar(config, sample, path, args.iter().any(|s| s == "--dark"));
         } else {
             ui::snapshot(config, sample, path);
         }

@@ -1,7 +1,12 @@
-use crate::{config::Config, drawing::rect};
+use crate::{
+    config::Config,
+    drawing::rect,
+    model::{Sample, ServerKind},
+};
 use objc2::{MainThreadOnly, rc::Retained, runtime::AnyObject, sel};
 use objc2_app_kit::*;
 use objc2_foundation::*;
+use std::cell::Cell;
 
 pub struct Settings {
     pub window: Retained<NSWindow>,
@@ -10,6 +15,9 @@ pub struct Settings {
     metrics: Vec<Retained<NSButton>>,
     login: Retained<NSButton>,
     error: Retained<NSTextField>,
+    models: Retained<NSTextField>,
+    test_button: Retained<NSButton>,
+    testing: Cell<bool>,
 }
 fn label(
     view: &NSView,
@@ -59,25 +67,56 @@ impl Settings {
         let hint = label(
             &view,
             mtm,
-            "Los cambios se guardan y se aplican al momento.",
+            concat!(
+                "Versión ",
+                env!("CARGO_PKG_VERSION"),
+                " · Los cambios se aplican al guardar."
+            ),
             rect(22., 641., 530., 20.),
             12.,
         );
         hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
         let mut fields = Vec::new();
         for (key, title, y) in [
-            ("url", "Endpoint de métricas", 606.),
+            ("url", "URL del servidor", 606.),
             ("dashboard", "Dashboard", 571.),
-            ("service", "Servicio", 536.),
         ] {
             label(&view, mtm, title, rect(22., y + 2., 146., 22.), 12.);
-            let field =
-                NSTextField::initWithFrame(NSTextField::alloc(mtm), rect(175., y, 391., 24.));
+            let field = NSTextField::initWithFrame(
+                NSTextField::alloc(mtm),
+                rect(175., y, if key == "url" { 280. } else { 391. }, 24.),
+            );
             field.setFont(Some(&NSFont::systemFontOfSize(12.)));
             field.setAccessibilityLabel(Some(&NSString::from_str(title)));
             view.addSubview(&field);
             fields.push((key, field));
         }
+        let test_button = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                ns_string!("Probar conexión"),
+                Some(target),
+                Some(sel!(testConnection:)),
+                mtm,
+            )
+        };
+        test_button.setFrame(rect(462., 603., 104., 30.));
+        test_button.setFont(Some(&NSFont::systemFontOfSize(11.)));
+        view.addSubview(&test_button);
+        label(
+            &view,
+            mtm,
+            "Modelos detectados",
+            rect(22., 538., 146., 22.),
+            12.,
+        );
+        let models = NSTextField::wrappingLabelWithString(
+            ns_string!("Detección automática al conectar."),
+            mtm,
+        );
+        models.setFrame(rect(175., 518., 391., 44.));
+        models.setFont(Some(&NSFont::systemFontOfSize(11.)));
+        models.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        view.addSubview(&models);
         for (title, y) in [("ACTUALIZACIÓN", 498.), ("UMBRALES DE AVISO", 380.)] {
             let title = label(&view, mtm, title, rect(22., y, 540., 18.), 10.);
             title.setTextColor(Some(&NSColor::secondaryLabelColor()));
@@ -89,8 +128,10 @@ impl Settings {
             ("history", "Lecturas del gráfico", 312., 424.),
             ("memWarn", "RAM aviso (%)", 22., 346.),
             ("memDanger", "RAM crítico (%)", 312., 346.),
-            ("tempWarn", "GPU aviso (°C)", 22., 308.),
-            ("tempDanger", "GPU crítico (°C)", 312., 308.),
+            ("gpuWarn", "GPU aviso (%)", 22., 308.),
+            ("gpuDanger", "GPU crítico (%)", 312., 308.),
+            ("tempWarn", "GPU aviso (°C)", 22., 270.),
+            ("tempDanger", "GPU crítico (°C)", 312., 270.),
         ] {
             label(&view, mtm, title, rect(x, y + 2., 165., 22.), 12.);
             let field =
@@ -112,13 +153,13 @@ impl Settings {
                 mtm,
             )
         };
-        graph.setFrame(rect(22., 257., 282., 24.));
+        graph.setFrame(rect(22., 225., 282., 24.));
         view.addSubview(&graph);
         let heading = label(
             &view,
             mtm,
             "BARRA DE MENÚS",
-            rect(22., 222., 540., 18.),
+            rect(22., 190., 540., 18.),
             10.,
         );
         heading.setTextColor(Some(&NSColor::secondaryLabelColor()));
@@ -132,7 +173,7 @@ impl Settings {
                     mtm,
                 )
             };
-            checkbox.setFrame(rect(x, 191., 170., 24.));
+            checkbox.setFrame(rect(x, 159., 170., 24.));
             view.addSubview(&checkbox);
             metrics.push(checkbox);
         }
@@ -144,7 +185,7 @@ impl Settings {
                 mtm,
             )
         };
-        login.setFrame(rect(22., 145., 540., 24.));
+        login.setFrame(rect(22., 117., 540., 24.));
         view.addSubview(&login);
         let hint = label(
             &view,
@@ -154,18 +195,10 @@ impl Settings {
             } else {
                 "Para activar el inicio de sesión, copia la app a Aplicaciones."
             },
-            rect(42., 119., 524., 20.),
+            rect(42., 91., 524., 20.),
             11.,
         );
         hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        let version = label(
-            &view,
-            mtm,
-            concat!("Versión ", env!("CARGO_PKG_VERSION"), " · Apple Silicon"),
-            rect(22., 87., 540., 18.),
-            10.,
-        );
-        version.setTextColor(Some(&NSColor::tertiaryLabelColor()));
         let error = NSTextField::wrappingLabelWithString(ns_string!(""), mtm);
         error.setFrame(rect(22., 53., 544., 32.));
         error.setTextColor(Some(&NSColor::systemRedColor()));
@@ -201,6 +234,9 @@ impl Settings {
             metrics,
             login,
             error,
+            models,
+            test_button,
+            testing: Cell::new(false),
         }
     }
     pub fn populate(&self, c: &Config) {
@@ -237,6 +273,9 @@ impl Settings {
         self.login
             .setEnabled(crate::login::available() || crate::login::enabled());
         self.error.setStringValue(ns_string!(""));
+        self.models
+            .setStringValue(ns_string!("Detección automática al conectar."));
+        self.models.setToolTip(None);
     }
     pub fn show(&self, c: &Config) {
         self.populate(c);
@@ -252,6 +291,7 @@ impl Settings {
             .map(|(key, f)| (key.to_string(), f.stringValue().to_string()))
             .collect::<Vec<_>>();
         let mut base = base.clone();
+        base.service = "auto".into();
         base.show_gpu = self.metrics[0].state() == NSControlStateValueOn;
         base.show_memory = self.metrics[1].state() == NSControlStateValueOn;
         base.show_tps = self.metrics[2].state() == NSControlStateValueOn;
@@ -261,10 +301,85 @@ impl Settings {
             base.border,
         )
     }
+    pub fn current_url(&self) -> String {
+        self.fields
+            .iter()
+            .find(|(key, _)| *key == "url")
+            .unwrap()
+            .1
+            .stringValue()
+            .to_string()
+            .trim()
+            .to_owned()
+    }
+    pub fn probe_config(&self, base: &Config) -> Result<Config, String> {
+        let inputs = self
+            .fields
+            .iter()
+            .filter(|(key, _)| matches!(*key, "url" | "timeout"))
+            .map(|(key, field)| (key.to_string(), field.stringValue().to_string()))
+            .collect::<Vec<_>>();
+        base.edited(&inputs, base.graph, base.border)
+    }
+    pub fn begin_probe(&self) -> bool {
+        if self.testing.replace(true) {
+            return false;
+        }
+        self.test_button.setEnabled(false);
+        self.error
+            .setTextColor(Some(&NSColor::secondaryLabelColor()));
+        self.error.setToolTip(None);
+        self.error
+            .setStringValue(ns_string!("Probando conexión y detectando modelos…"));
+        true
+    }
+    pub fn update_models(&self, input: &str, sample: &Sample) {
+        if self.current_url() != input {
+            return;
+        }
+        let models = sample.model_summary();
+        self.models.setStringValue(&NSString::from_str(&models));
+        self.models.setToolTip(Some(&NSString::from_str(&models)));
+    }
+    pub fn finish_probe(&self, input: &str, result: &Result<Sample, String>) {
+        self.testing.set(false);
+        self.test_button.setEnabled(true);
+        if self.current_url() != input {
+            self.error("La URL ha cambiado. Pulsa Probar conexión para verificarla.");
+            return;
+        }
+        match result {
+            Ok(sample) => {
+                self.update_models(input, sample);
+                self.error.setTextColor(Some(&NSColor::systemGreenColor()));
+                let message = match sample.kind {
+                    ServerKind::Kairos => format!(
+                        "Conexión correcta · Kairos · Modelos activos: {}",
+                        sample.models.len()
+                    ),
+                    ServerKind::OpenAI => format!(
+                        "Conexión correcta · OpenAI compatible · {} modelos. Sin telemetría de hardware.",
+                        sample.models.len()
+                    ),
+                };
+                self.error.setStringValue(&NSString::from_str(&message));
+                self.error
+                    .setToolTip(Some(&NSString::from_str(&sample.endpoint)));
+            }
+            Err(e) => {
+                self.models
+                    .setStringValue(ns_string!("No se pudo detectar el catálogo de modelos."));
+                self.models.setToolTip(None);
+                self.error(e);
+            }
+        }
+    }
     pub fn login_enabled(&self) -> bool {
         self.login.state() == NSControlStateValueOn
     }
     pub fn error(&self, message: &str) {
+        self.error.setTextColor(Some(&NSColor::systemRedColor()));
+        self.error.setToolTip(Some(&NSString::from_str(message)));
         self.error.setStringValue(&NSString::from_str(message));
     }
     pub fn close(&self) {
