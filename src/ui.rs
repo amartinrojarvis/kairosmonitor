@@ -250,6 +250,7 @@ define_class!(
         #[unsafe(method(installUpdate:))] fn on_install_update(&self, _sender: &AnyObject) { self.install_update(); }
         #[unsafe(method(automaticUpdates:))] fn on_automatic_updates(&self, _sender: &AnyObject) { self.automatic_updates(); }
         #[unsafe(method(updatesReady:))] fn on_updates_ready(&self, _note: &NSNotification) { self.update_result(); }
+        #[unsafe(method(about:))] fn on_about(&self, _sender: &AnyObject) { self.about(); }
         #[unsafe(method(settings:))] fn on_settings(&self,_sender:&AnyObject){self.open_settings();}
         #[unsafe(method(saveSettings:))] fn on_save_settings(&self,_sender:&AnyObject){self.save_settings();}
         #[unsafe(method(cancelSettings:))] fn on_cancel_settings(&self,_sender:&AnyObject){if let Some(s)=self.ivars().settings.get(){s.close();}}
@@ -684,6 +685,70 @@ impl App {
             }
             self.update_controls();
         }
+    }
+    fn about(&self) {
+        if let Some(popover) = self.ivars().popover.get() {
+            popover.close();
+        }
+        let app = NSApplication::sharedApplication(self.mtm());
+        let content = "Creado por Alberto Martín\n\nInstagram · @amartinro\nX · @amartinro";
+        let credits = NSMutableAttributedString::initWithString(
+            NSMutableAttributedString::alloc(),
+            &NSString::from_str(content),
+        );
+        let full = NSRange::new(0, content.encode_utf16().count());
+        let paragraph = NSMutableParagraphStyle::new();
+        paragraph.setAlignment(NSTextAlignment::Center);
+        // Attribute keys receive the documented AppKit value types; ranges use UTF-16.
+        unsafe {
+            credits.addAttribute_value_range(
+                NSFontAttributeName,
+                &NSFont::systemFontOfSize(13.),
+                full,
+            );
+            credits.addAttribute_value_range(
+                NSForegroundColorAttributeName,
+                &NSColor::labelColor(),
+                full,
+            );
+            credits.addAttribute_value_range(NSParagraphStyleAttributeName, &paragraph, full);
+            for (label, url) in [
+                (
+                    "Instagram · @amartinro",
+                    "https://www.instagram.com/amartinro/",
+                ),
+                ("X · @amartinro", "https://x.com/amartinro"),
+            ] {
+                let start = content.find(label).unwrap();
+                let range = NSRange::new(
+                    content[..start].encode_utf16().count(),
+                    label.encode_utf16().count(),
+                );
+                credits.addAttribute_value_range(
+                    NSLinkAttributeName,
+                    &NSURL::URLWithString(&NSString::from_str(url)).unwrap(),
+                    range,
+                );
+            }
+            let version = NSString::from_str(env!("CARGO_PKG_VERSION"));
+            let options = NSDictionary::from_slices(
+                &[
+                    NSAboutPanelOptionApplicationName,
+                    NSAboutPanelOptionApplicationVersion,
+                    NSAboutPanelOptionVersion,
+                    NSAboutPanelOptionCredits,
+                ],
+                &[
+                    ns_string!("Kairos Monitor") as &AnyObject,
+                    &*version as &AnyObject,
+                    ns_string!("") as &AnyObject,
+                    &*credits as &AnyObject,
+                ],
+            );
+            app.orderFrontStandardAboutPanelWithOptions(&options);
+        }
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
     }
     fn dashboard(&self) {
         let url = self.ivars().state.borrow().config.dashboard.clone();

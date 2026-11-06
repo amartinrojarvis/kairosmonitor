@@ -61,9 +61,20 @@ impl Settings {
             &view,
             mtm,
             "Kairos Monitor",
-            rect(22., 665., 530., 28.),
+            rect(22., 665., 240., 28.),
             20.,
         );
+        let about = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                ns_string!("Acerca de…"),
+                Some(target),
+                Some(sel!(about:)),
+                mtm,
+            )
+        };
+        about.setFrame(rect(280., 662., 116., 32.));
+        about.setBezelStyle(NSBezelStyle::Push);
+        view.addSubview(&about);
         let updates = unsafe {
             NSButton::buttonWithTitle_target_action(
                 ns_string!("Actualizaciones…"),

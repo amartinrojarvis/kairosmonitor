@@ -6,7 +6,7 @@ Monitor nativo para la barra de menús de macOS, escrito en Rust y AppKit. Telem
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.4.1 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.1/KairosMonitor-0.4.1-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.4.2 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.2/KairosMonitor-0.4.2-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -113,3 +113,9 @@ Las pruebas cubren reutilización de conexión, datos frescos sin caché, errore
 `src/network.rs` gestiona la red; `src/model.rs` interpreta datos y avisos; `src/ui.rs` coordina AppKit y consultas; `src/drawing.rs` dibuja barra y panel; `src/config.rs` valida y guarda ajustes; `src/settings.rs` contiene el formulario; `src/login.rs` gestiona el inicio de sesión; `src/updates.rs` verifica e instala releases y `src/update_window.rs` contiene sus controles.
 
 `reference/` conserva el plugin original de X1 (Omarchy/Quickshell). Kairos Monitor consulta el endpoint directamente: X1 no necesita estar encendido. La fuente histórica y su licencia permanecen en el repositorio, pero no se distribuyen dentro de la aplicación.
+
+## Autor
+
+Creado por **Alberto Martín** · [Instagram: @amartinro](https://www.instagram.com/amartinro/) · [X: @amartinro](https://x.com/amartinro).
+
+En **Ajustes → Acerca de…** encontrarás la autoría, la versión instalada, el icono de la app y los enlaces a sus perfiles.

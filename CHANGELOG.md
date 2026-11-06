@@ -1,5 +1,10 @@
 # Cambios
 
+## 0.4.2
+
+- Ventana nativa Acerca de, accesible desde Ajustes, con autoría de Alberto Martín, icono y versión de la app.
+- Enlaces a Instagram y X: @amartinro.
+
 ## 0.4.1
 
 - Controles inferiores rediseñados como botones nativos con iconos, fondos visibles, mayor área de clic y separación uniforme.
