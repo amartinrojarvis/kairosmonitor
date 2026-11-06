@@ -168,8 +168,8 @@ impl App {
         let iv = self.ivars();
         let mtm = self.mtm();
         let state = iv.state.borrow();
-        let status = NSStatusBar::systemStatusBar()
-            .statusItemWithLength(drawing::bar_width(&state.config) + 12.);
+        let status =
+            NSStatusBar::systemStatusBar().statusItemWithLength(NSVariableStatusItemLength);
         let button = status.button(mtm).expect("status button");
         // SAFETY: the target is this retained delegate; selectors have the matching action signature.
         unsafe {
@@ -298,15 +298,19 @@ impl App {
         let state = iv.state.borrow();
         if let Some(button) = iv.status.get().and_then(|s| s.button(self.mtm())) {
             let key = format!(
-                "{:?}:{}:{}:{}:{}",
+                "{:?}:{}:{}:{}",
                 state.sample.as_ref().map(Sample::bar),
                 state.config.show_gpu,
                 state.config.show_memory,
-                state.config.show_tps,
-                state.config.value_chars
+                state.config.show_tps
             );
             if *iv.last_bar.borrow() != key {
-                button.setImage(Some(&drawing::bar(&state)));
+                let image = drawing::bar(&state);
+                iv.status
+                    .get()
+                    .unwrap()
+                    .setLength(image.size().width + 2. * drawing::BAR_PADDING);
+                button.setImage(Some(&image));
                 *iv.last_bar.borrow_mut() = key;
             }
             button.setToolTip(Some(&NSString::from_str(&format!(
@@ -379,7 +383,6 @@ impl App {
             }
         };
         let height = drawing::height(&config);
-        let width = drawing::bar_width(&config) + 12.;
         {
             let mut state = iv.state.borrow_mut();
             if state.config.url != config.url || state.config.service != config.service {
@@ -393,9 +396,6 @@ impl App {
             }
         }
         iv.revision.set(iv.revision.get() + 1);
-        if let Some(status) = iv.status.get() {
-            status.setLength(width);
-        }
         if let Some(panel) = iv.panel.get() {
             panel.setFrameSize(NSSize::new(drawing::WIDTH, height));
             for button in panel.subviews().iter() {
@@ -499,7 +499,7 @@ pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str) 
     bar.setTemplate(false);
     let image = NSImage::initWithSize(
         NSImage::alloc(),
-        NSSize::new(drawing::bar_width(&state.config) + 12., 28.),
+        NSSize::new(bar.size().width + 2. * drawing::BAR_PADDING, 28.),
     );
     #[allow(deprecated)]
     image.lockFocusFlipped(true);
@@ -508,7 +508,12 @@ pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str) 
         &NSColor::whiteColor(),
         0.,
     );
-    bar.drawInRect(rect(6., 5., bar.size().width, bar.size().height));
+    bar.drawInRect(rect(
+        drawing::BAR_PADDING,
+        5.,
+        bar.size().width,
+        bar.size().height,
+    ));
     #[allow(deprecated)]
     image.unlockFocus();
     let bitmap = NSBitmapImageRep::imageRepWithData(&image.TIFFRepresentation().unwrap()).unwrap();

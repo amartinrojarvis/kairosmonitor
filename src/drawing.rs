@@ -363,50 +363,71 @@ pub fn panel(state: &State) {
 }
 /// Transparent template: AppKit owns the background, selected state and light/dark tint.
 /// No custom pill/frame can collide with the status button's highlight.
+pub const BAR_PADDING: f64 = 4.;
 pub fn bar(state: &State) -> Retained<NSImage> {
     let c = &state.config;
-    let width = bar_width(c);
-    let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(width, 18.));
-    #[allow(deprecated)]
-    image.lockFocusFlipped(true);
-    let values = state
-        .sample
-        .as_ref()
-        .map(|s| {
-            [
-                percent(s.n("/gpu/0/utilization")),
-                gib_short(s.n("/memory/used")),
-                compact(s.tps),
-            ]
-        })
-        .unwrap_or(["—".into(), "—".into(), "—".into()]);
+    let values =
+        state
+            .sample
+            .as_ref()
+            .map(Sample::bar)
+            .unwrap_or(["—".into(), "—".into(), "—".into()]);
     let enabled = [c.show_gpu, c.show_memory, c.show_tps];
     let names = ["cpu", "memorychip", "bolt.fill"];
-    let alpha = if state.sample.is_some() { 1. } else { 0.4 };
-    let ink = NSColor::blackColor().colorWithAlphaComponent(alpha);
-    let mut x = 2.;
+    let font = NSFont::monospacedDigitSystemFontOfSize_weight(11., unsafe { NSFontWeightRegular });
+    let attrs =
+        NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[&*font as &AnyObject]);
+    // Measure the actual glyphs: no trailing empty value slot or padding per metric.
+    let mut items = Vec::new();
     for i in 0..3 {
         if !enabled[i] {
             continue;
         }
-        if x > 2. {
+        let symbol = NSImage::imageWithSystemSymbolName_accessibilityDescription(
+            &NSString::from_str(names[i]),
+            None,
+        );
+        let (w, h) = symbol
+            .as_ref()
+            .map(|symbol| {
+                let size = symbol.size();
+                let scale = (13. / size.width).min(13. / size.height);
+                ((size.width * scale).ceil(), (size.height * scale).ceil())
+            })
+            .unwrap_or((0., 0.));
+        // The font attribute contains a retained NSFont of the required type.
+        let text_width = unsafe { NSString::from_str(&values[i]).sizeWithAttributes(Some(&attrs)) }
+            .width
+            .ceil()
+            + 1.;
+        let gap = if symbol.is_some() { 3. } else { 0. };
+        items.push((symbol, w, h, &values[i], text_width, gap));
+    }
+    const SEPARATOR_GAP: f64 = 12.;
+    let width = items
+        .iter()
+        .map(|(_, w, _, _, tw, gap)| w + gap + tw)
+        .sum::<f64>()
+        + SEPARATOR_GAP * items.len().saturating_sub(1) as f64;
+    let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(width.max(1.), 18.));
+    #[allow(deprecated)]
+    image.lockFocusFlipped(true);
+    let alpha = if state.sample.is_some() { 1. } else { 0.4 };
+    let ink = NSColor::blackColor().colorWithAlphaComponent(alpha);
+    let mut x = 0.;
+    for (index, (symbol, w, h, value, tw, gap)) in items.iter().enumerate() {
+        if index > 0 {
             fill(
-                rect(x - 5., 4., 0.5, 10.),
+                rect(x + SEPARATOR_GAP / 2. - 0.25, 4., 0.5, 10.),
                 &NSColor::blackColor().colorWithAlphaComponent(0.2),
                 0.,
             );
+            x += SEPARATOR_GAP;
         }
-        if let Some(symbol) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
-            &NSString::from_str(names[i]),
-            None,
-        ) {
-            let size = symbol.size();
-            let scale = (13. / size.width).min(13. / size.height);
-            let w = size.width * scale;
-            let h = size.height * scale;
+        if let Some(symbol) = symbol {
             unsafe {
                 symbol.drawInRect_fromRect_operation_fraction_respectFlipped_hints(
-                    rect(x + (13. - w) / 2., (18. - h) / 2., w, h),
+                    rect(x, (18. - h) / 2., *w, *h),
                     NSRect::ZERO,
                     NSCompositingOperation::SourceOver,
                     alpha,
@@ -415,26 +436,11 @@ pub fn bar(state: &State) -> Retained<NSImage> {
                 );
             }
         }
-        text(
-            &values[i],
-            rect(x + 17., 1., slot_width(c) - 22., 16.),
-            11.,
-            &ink,
-        );
-        x += slot_width(c);
+        text(value, rect(x + w + gap, 1., *tw, 16.), 11., &ink);
+        x += w + gap + tw;
     }
     #[allow(deprecated)]
     image.unlockFocus();
     image.setTemplate(true);
     image
-}
-fn slot_width(c: &Config) -> f64 {
-    24. + c.value_chars.max(5) as f64 * 7.
-}
-pub fn bar_width(c: &Config) -> f64 {
-    4. + [c.show_gpu, c.show_memory, c.show_tps]
-        .into_iter()
-        .filter(|v| *v)
-        .count() as f64
-        * slot_width(c)
 }

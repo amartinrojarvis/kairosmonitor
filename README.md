@@ -4,7 +4,7 @@ Monitor nativo de Kairos para la barra de menús de macOS, escrito en Rust y App
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.2.0 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.2.0/KairosMonitor-0.2.0-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.2.1 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.2.1/KairosMonitor-0.2.1-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -20,7 +20,7 @@ La distribución actual tiene firma **ad hoc**, sin Developer ID ni notarizació
 - Clic izquierdo: abre o cierra el panel. Escape o clic fuera lo cierran.
 - Clic derecho: abre el dashboard. Clic central: actualiza las métricas.
 - GPU, RAM y tokens/s se pueden mostrar por separado desde Ajustes; debe quedar al menos una métrica visible.
-- La barra es transparente, con símbolos nativos y cifras de ancho uniforme. macOS aplica el color y el resaltado de selección: no hay una píldora adicional que produzca bordes laterales.
+- La barra es transparente, con símbolos nativos y cifras de ancho uniforme. macOS aplica el color y el resaltado de selección: no hay una píldora adicional que produzca bordes laterales. El ancho se ajusta al contenido, con márgenes exteriores iguales y separadores centrados.
 - Los avisos de temperatura y RAM se muestran en color en el panel. La barra queda atenuada cuando no hay conexión; los valores grandes se abrevian.
 
 El panel muestra GPU, temperatura, potencia, RAM, swap, rendimiento del servicio, CPU, carga, red, disco, modelo, contexto, consumidores e historial de tokens/s. Un servicio detenido no muestra rendimiento antiguo. Los errores borran la lectura actual y dejan huecos en el historial.
@@ -37,7 +37,7 @@ El panel muestra GPU, temperatura, potencia, RAM, swap, rendimiento del servicio
 
 La frecuencia predeterminada es 5 s con el panel cerrado y 2 s abierto; puedes aumentar los intervalos para consultar menos. El consumo real depende del servidor, del intervalo y de si el panel está abierto.
 
-**Ajustes** permite modificar conexión, servicio, intervalos, timeout, historial, umbrales, gráfico, métricas visibles e inicio de sesión. Los cambios se aplican sin reiniciar. Se conservan las configuraciones de la versión 0.1; sus antiguos campos `border`, `fillAlpha` y `borderAlpha` se aceptan por compatibilidad, pero ya no dibujan un marco en la barra.
+**Ajustes** permite modificar conexión, servicio, intervalos, timeout, historial, umbrales, gráfico, métricas visibles e inicio de sesión. Los cambios se aplican sin reiniciar. Se conservan las configuraciones de la versión 0.1; sus antiguos campos `border`, `fillAlpha`, `borderAlpha` y `valueChars` se aceptan por compatibilidad, pero ya no controlan el marco ni reservan espacio vacío en la barra.
 
 Configuración: `~/Library/Application Support/KairosMonitor/config.toml`. Editar ese archivo a mano requiere reiniciar. El inicio de sesión es una preferencia de cada Mac y se gestiona con `~/Library/LaunchAgents/es.amartin.kairosmonitor.plist`; activarlo o desactivarlo no abre otra instancia ni cierra la actual. La app debe estar en `/Applications` o `~/Applications` para activarlo. No utiliza `KeepAlive`: **Salir** mantiene la app cerrada hasta abrirla de nuevo o iniciar otra sesión.
 
