@@ -83,7 +83,7 @@ impl Sample {
         [
             percent(self.n("/gpu/0/utilization")),
             gib_short(self.n("/memory/used")),
-            decimal(self.tps),
+            compact(self.tps),
         ]
     }
 }
@@ -98,6 +98,18 @@ pub fn decimal(n: f64) -> String {
             .trim_end_matches('.')
             .to_string()
     }
+}
+/// Keep high throughput values readable without changing menu-bar width.
+pub fn compact(n: f64) -> String {
+    if n < 0. || !n.is_finite() {
+        return "—".into();
+    }
+    for (scale, suffix) in [(1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "k")] {
+        if n >= scale * 0.9995 {
+            return format!("{}{suffix}", decimal(n / scale));
+        }
+    }
+    decimal(n)
 }
 pub fn percent(n: f64) -> String {
     if n < 0. {
@@ -117,7 +129,7 @@ pub fn gib_short(n: f64) -> String {
     if n < 0. {
         "--".into()
     } else {
-        format!("{}G", decimal(n / 1073741824.))
+        format!("{}G", compact(n / 1073741824.))
     }
 }
 pub fn rate(n: f64) -> String {
@@ -149,30 +161,9 @@ pub fn uptime(n: f64) -> String {
         format!("{}m", n / 60)
     }
 }
+pub use crate::network::Client;
 pub fn fetch(c: &Config) -> Result<Sample, String> {
-    let out = std::process::Command::new("/usr/bin/curl")
-        .args([
-            "--silent",
-            "--show-error",
-            "--fail",
-            "--noproxy",
-            "*",
-            "--max-time",
-            &c.timeout.to_string(),
-            "--max-filesize",
-            "2097152",
-            "--",
-            &c.url,
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !out.status.success() {
-        return Err(format!(
-            "Kairos no responde · {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-    Sample::parse(&out.stdout, &c.service)
+    objc2::rc::autoreleasepool(|_| Client::new().fetch(c))
 }
 #[cfg(test)]
 mod tests {
@@ -221,5 +212,9 @@ mod tests {
         assert_eq!(rate(1536.), "2K");
         assert_eq!(uptime(90061.), "1d 1h");
         assert_eq!(percent(-1.), "--");
+        assert_eq!(compact(999.9), "1k");
+        assert_eq!(compact(1234.), "1.2k");
+        assert_eq!(compact(999_999.), "1M");
+        assert_eq!(compact(-1.), "—");
     }
 }

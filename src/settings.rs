@@ -7,7 +7,8 @@ pub struct Settings {
     pub window: Retained<NSWindow>,
     fields: Vec<(&'static str, Retained<NSTextField>)>,
     graph: Retained<NSButton>,
-    border: Retained<NSButton>,
+    metrics: Vec<Retained<NSButton>>,
+    login: Retained<NSButton>,
     error: Retained<NSTextField>,
 }
 fn label(
@@ -29,7 +30,7 @@ impl Settings {
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 NSWindow::alloc(mtm),
-                rect(0., 0., 590., 574.),
+                rect(0., 0., 590., 710.),
                 NSWindowStyleMask::Titled | NSWindowStyleMask::Closable,
                 NSBackingStoreType::Buffered,
                 false,
@@ -52,22 +53,22 @@ impl Settings {
             &view,
             mtm,
             "Kairos Monitor",
-            rect(22., 529., 530., 28.),
+            rect(22., 665., 530., 28.),
             20.,
         );
         let hint = label(
             &view,
             mtm,
             "Los cambios se guardan y se aplican al momento.",
-            rect(22., 505., 530., 20.),
+            rect(22., 641., 530., 20.),
             12.,
         );
         hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
         let mut fields = Vec::new();
         for (key, title, y) in [
-            ("url", "Endpoint de métricas", 470.),
-            ("dashboard", "Dashboard", 435.),
-            ("service", "Servicio", 400.),
+            ("url", "Endpoint de métricas", 606.),
+            ("dashboard", "Dashboard", 571.),
+            ("service", "Servicio", 536.),
         ] {
             label(&view, mtm, title, rect(22., y + 2., 146., 22.), 12.);
             let field =
@@ -77,19 +78,19 @@ impl Settings {
             view.addSubview(&field);
             fields.push((key, field));
         }
-        for (title, y) in [("ACTUALIZACIÓN", 362.), ("UMBRALES DE AVISO", 244.)] {
+        for (title, y) in [("ACTUALIZACIÓN", 498.), ("UMBRALES DE AVISO", 380.)] {
             let title = label(&view, mtm, title, rect(22., y, 540., 18.), 10.);
             title.setTextColor(Some(&NSColor::secondaryLabelColor()));
         }
         for (key, title, x, y) in [
-            ("interval", "Panel cerrado (s)", 22., 326.),
-            ("openInterval", "Panel abierto (s)", 312., 326.),
-            ("timeout", "Tiempo de espera (s)", 22., 288.),
-            ("history", "Lecturas del gráfico", 312., 288.),
-            ("memWarn", "RAM aviso (%)", 22., 210.),
-            ("memDanger", "RAM crítico (%)", 312., 210.),
-            ("tempWarn", "GPU aviso (°C)", 22., 172.),
-            ("tempDanger", "GPU crítico (°C)", 312., 172.),
+            ("interval", "Panel cerrado (s)", 22., 462.),
+            ("openInterval", "Panel abierto (s)", 312., 462.),
+            ("timeout", "Tiempo de espera (s)", 22., 424.),
+            ("history", "Lecturas del gráfico", 312., 424.),
+            ("memWarn", "RAM aviso (%)", 22., 346.),
+            ("memDanger", "RAM crítico (%)", 312., 346.),
+            ("tempWarn", "GPU aviso (°C)", 22., 308.),
+            ("tempDanger", "GPU crítico (°C)", 312., 308.),
         ] {
             label(&view, mtm, title, rect(x, y + 2., 165., 22.), 12.);
             let field =
@@ -111,20 +112,62 @@ impl Settings {
                 mtm,
             )
         };
-        graph.setFrame(rect(22., 121., 282., 24.));
+        graph.setFrame(rect(22., 257., 282., 24.));
         view.addSubview(&graph);
-        let border = unsafe {
+        let heading = label(
+            &view,
+            mtm,
+            "BARRA DE MENÚS",
+            rect(22., 222., 540., 18.),
+            10.,
+        );
+        heading.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        let mut metrics = Vec::new();
+        for (title, x) in [("GPU (%)", 22.), ("RAM (GiB)", 202.), ("Tokens/s", 382.)] {
+            let checkbox = unsafe {
+                NSButton::checkboxWithTitle_target_action(
+                    &NSString::from_str(title),
+                    None,
+                    None,
+                    mtm,
+                )
+            };
+            checkbox.setFrame(rect(x, 191., 170., 24.));
+            view.addSubview(&checkbox);
+            metrics.push(checkbox);
+        }
+        let login = unsafe {
             NSButton::checkboxWithTitle_target_action(
-                ns_string!("Borde de la píldora"),
+                ns_string!("Abrir al iniciar sesión"),
                 None,
                 None,
                 mtm,
             )
         };
-        border.setFrame(rect(312., 121., 254., 24.));
-        view.addSubview(&border);
+        login.setFrame(rect(22., 145., 540., 24.));
+        view.addSubview(&login);
+        let hint = label(
+            &view,
+            mtm,
+            if crate::login::available() {
+                "Se abrirá en la barra de menús, sin ventanas ni icono en el Dock."
+            } else {
+                "Para activar el inicio de sesión, copia la app a Aplicaciones."
+            },
+            rect(42., 119., 524., 20.),
+            11.,
+        );
+        hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        let version = label(
+            &view,
+            mtm,
+            concat!("Versión ", env!("CARGO_PKG_VERSION"), " · Apple Silicon"),
+            rect(22., 87., 540., 18.),
+            10.,
+        );
+        version.setTextColor(Some(&NSColor::tertiaryLabelColor()));
         let error = NSTextField::wrappingLabelWithString(ns_string!(""), mtm);
-        error.setFrame(rect(22., 62., 544., 46.));
+        error.setFrame(rect(22., 53., 544., 32.));
         error.setTextColor(Some(&NSColor::systemRedColor()));
         error.setFont(Some(&NSFont::systemFontOfSize(11.)));
         view.addSubview(&error);
@@ -155,7 +198,8 @@ impl Settings {
             window,
             fields,
             graph,
-            border,
+            metrics,
+            login,
             error,
         }
     }
@@ -174,11 +218,24 @@ impl Settings {
         } else {
             NSControlStateValueOff
         });
-        self.border.setState(if c.border {
+        for (checkbox, enabled) in self
+            .metrics
+            .iter()
+            .zip([c.show_gpu, c.show_memory, c.show_tps])
+        {
+            checkbox.setState(if enabled {
+                NSControlStateValueOn
+            } else {
+                NSControlStateValueOff
+            });
+        }
+        self.login.setState(if crate::login::enabled() {
             NSControlStateValueOn
         } else {
             NSControlStateValueOff
         });
+        self.login
+            .setEnabled(crate::login::available() || crate::login::enabled());
         self.error.setStringValue(ns_string!(""));
     }
     pub fn show(&self, c: &Config) {
@@ -194,11 +251,18 @@ impl Settings {
             .iter()
             .map(|(key, f)| (key.to_string(), f.stringValue().to_string()))
             .collect::<Vec<_>>();
+        let mut base = base.clone();
+        base.show_gpu = self.metrics[0].state() == NSControlStateValueOn;
+        base.show_memory = self.metrics[1].state() == NSControlStateValueOn;
+        base.show_tps = self.metrics[2].state() == NSControlStateValueOn;
         base.edited(
             &values,
             self.graph.state() == NSControlStateValueOn,
-            self.border.state() == NSControlStateValueOn,
+            base.border,
         )
+    }
+    pub fn login_enabled(&self) -> bool {
+        self.login.state() == NSControlStateValueOn
     }
     pub fn error(&self, message: &str) {
         self.error.setStringValue(&NSString::from_str(message));

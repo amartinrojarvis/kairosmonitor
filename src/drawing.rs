@@ -33,11 +33,14 @@ pub fn outline(r: NSRect, c: &NSColor, radius: f64) {
 pub fn text(s: &str, r: NSRect, size: f64, c: &NSColor) {
     // AppKit drawing is confined to the main thread; the attribute values match their keys.
     unsafe {
-        let font = NSFont::fontWithName_size(ns_string!("JetBrainsMonoNF-Regular"), size)
-            .or_else(|| NSFont::fontWithName_size(ns_string!("JetBrainsMono Nerd Font"), size))
-            .unwrap_or_else(|| {
-                NSFont::monospacedSystemFontOfSize_weight(size, NSFontWeightRegular)
-            });
+        let font = NSFont::monospacedDigitSystemFontOfSize_weight(
+            size,
+            if size >= 17. {
+                NSFontWeightMedium
+            } else {
+                NSFontWeightRegular
+            },
+        );
         let paragraph = NSMutableParagraphStyle::new();
         paragraph.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
         let attrs = NSDictionary::from_slices(
@@ -56,10 +59,9 @@ pub fn text(s: &str, r: NSRect, size: f64, c: &NSColor) {
     }
 }
 fn label(s: &str, x: f64, y: f64, w: f64, c: &Config) {
-    text("$", rect(x, y, 12., 16.), 10., &color(&c.green, 1.));
     text(
         &s.to_uppercase(),
-        rect(x + 14., y, w - 14., 16.),
+        rect(x, y, w, 16.),
         10.,
         &color(&c.muted, 1.),
     );
@@ -90,11 +92,11 @@ fn card(
     c: &Config,
 ) {
     let w = 200.;
-    fill(rect(x, 98., w, 142.), &color(&c.foreground, 0.045), 3.);
+    fill(rect(x, 98., w, 142.), &color(&c.foreground, 0.045), 10.);
     outline(
         rect(x + 0.5, 98.5, w - 1., 141.),
-        &color(&c.foreground, 0.13),
-        3.,
+        &color(&c.foreground, 0.09),
+        10.,
     );
     label(label_text, x + 12., 111., w - 24., c);
     text(value, rect(x + 12., 131., w - 24., 34.), 25., tone);
@@ -141,20 +143,20 @@ pub fn panel(state: &State) {
         &color(&c.background, 0.94),
         0.,
     );
-    label("kairos dash", 20., 17., 420., c);
+    label("Kairos Monitor", 20., 17., 420., c);
     text(
         &if online {
             s("/hostname").to_uppercase()
         } else {
             "KAIROS".into()
         },
-        rect(20., 38., 490., 24.),
+        rect(20., 38., 510., 24.),
         17.,
         &color(&c.foreground, 1.),
     );
     let meta = if online {
         format!(
-            "uptime {}  ·  actualizado {}  ·  tailscale {}",
+            "Activo {}  ·  actualizado {}  ·  Tailscale {}",
             uptime(n("/uptime")),
             state.updated,
             s("/tailscale/ips/0")
@@ -172,7 +174,7 @@ pub fn panel(state: &State) {
     );
     fill(rect(558., 39., 7., 7.), &status_color, 1.);
     text(
-        if online { "online" } else { "offline" },
+        if online { "En línea" } else { "Sin red" },
         rect(572., 35., 65., 19.),
         11.,
         &status_color,
@@ -205,7 +207,7 @@ pub fn panel(state: &State) {
     );
     card(
         230.,
-        "system memory",
+        "memoria RAM",
         &gib(n("/memory/used")),
         mem / 100.,
         &if online {
@@ -223,7 +225,7 @@ pub fn panel(state: &State) {
     );
     let svc = sample.map(|s| s.service(&c.service));
     let service_status = match svc.and_then(|s| s["running"].as_bool()) {
-        Some(true) => "servicio online",
+        Some(true) => "servicio activo",
         Some(false) => "servicio detenido",
         None => "",
     };
@@ -279,9 +281,9 @@ pub fn panel(state: &State) {
     let consumers = sample.map(|s| s.consumers()).unwrap_or("--".into());
     for (i, (key, val)) in [
         ("CPU", percent(n("/cpu/percent"))),
-        ("LOAD", load),
+        ("CARGA", load),
         (
-            "NET ↓ ↑",
+            "RED ↓ ↑",
             format!(
                 "{}  {}",
                 rate(n("/network/rxPerSec")),
@@ -359,59 +361,80 @@ pub fn panel(state: &State) {
         }
     }
 }
-pub fn bar(state: &State, ink: &NSColor) -> Retained<NSImage> {
+/// Transparent template: AppKit owns the background, selected state and light/dark tint.
+/// No custom pill/frame can collide with the status button's highlight.
+pub fn bar(state: &State) -> Retained<NSImage> {
     let c = &state.config;
     let width = bar_width(c);
-    let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(width, 22.));
+    let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(width, 18.));
     #[allow(deprecated)]
     image.lockFocusFlipped(true);
-    fill(
-        rect(1., 1., width - 2., 20.),
-        &ink.colorWithAlphaComponent(c.fill_alpha),
-        10.,
-    );
-    if c.border {
-        outline(
-            rect(1.5, 1.5, width - 3., 19.),
-            &ink.colorWithAlphaComponent(c.border_alpha),
-            10.,
-        );
-    }
-    let values =
-        state
-            .sample
-            .as_ref()
-            .map(Sample::bar)
-            .unwrap_or(["--".into(), "--".into(), "--".into()]);
-    let icons = ["\u{f061a}", "\u{f035b}", "\u{f140b}"];
-    let chip = (width - 16.) / 3.;
+    let values = state
+        .sample
+        .as_ref()
+        .map(|s| {
+            [
+                percent(s.n("/gpu/0/utilization")),
+                gib_short(s.n("/memory/used")),
+                compact(s.tps),
+            ]
+        })
+        .unwrap_or(["—".into(), "—".into(), "—".into()]);
+    let enabled = [c.show_gpu, c.show_memory, c.show_tps];
+    let names = ["cpu", "memorychip", "bolt.fill"];
+    let alpha = if state.sample.is_some() { 1. } else { 0.4 };
+    let ink = NSColor::blackColor().colorWithAlphaComponent(alpha);
+    let mut x = 2.;
     for i in 0..3 {
-        let mut tint = ink.colorWithAlphaComponent(if state.sample.is_some() { 1. } else { 0.45 });
-        if let Some(s) = &state.sample {
-            if i == 1 && s.n("/memory/percent") >= c.mem_warn {
-                tint = tone(s.n("/memory/percent"), c.mem_warn, c.mem_danger, c);
-            }
-            if i == 0 && s.n("/gpu/0/temperature") >= c.temp_danger {
-                tint = color(&c.red, 1.);
+        if !enabled[i] {
+            continue;
+        }
+        if x > 2. {
+            fill(
+                rect(x - 5., 4., 0.5, 10.),
+                &NSColor::blackColor().colorWithAlphaComponent(0.2),
+                0.,
+            );
+        }
+        if let Some(symbol) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
+            &NSString::from_str(names[i]),
+            None,
+        ) {
+            let size = symbol.size();
+            let scale = (13. / size.width).min(13. / size.height);
+            let w = size.width * scale;
+            let h = size.height * scale;
+            unsafe {
+                symbol.drawInRect_fromRect_operation_fraction_respectFlipped_hints(
+                    rect(x + (13. - w) / 2., (18. - h) / 2., w, h),
+                    NSRect::ZERO,
+                    NSCompositingOperation::SourceOver,
+                    alpha,
+                    true,
+                    None,
+                );
             }
         }
         text(
-            icons[i],
-            rect(8. + i as f64 * chip, 3., 17., 17.),
-            12.,
-            &tint,
-        );
-        text(
             &values[i],
-            rect(25. + i as f64 * chip, 3., chip - 20., 17.),
+            rect(x + 17., 1., slot_width(c) - 22., 16.),
             11.,
-            &tint,
+            &ink,
         );
+        x += slot_width(c);
     }
     #[allow(deprecated)]
     image.unlockFocus();
+    image.setTemplate(true);
     image
 }
+fn slot_width(c: &Config) -> f64 {
+    24. + c.value_chars.max(5) as f64 * 7.
+}
 pub fn bar_width(c: &Config) -> f64 {
-    16. + 3. * (24. + c.value_chars as f64 * 7.)
+    4. + [c.show_gpu, c.show_memory, c.show_tps]
+        .into_iter()
+        .filter(|v| *v)
+        .count() as f64
+        * slot_width(c)
 }

@@ -26,10 +26,14 @@ pub struct State {
     pub error: String,
     pub updated: String,
     pub history: VecDeque<(Instant, f64)>,
+    clock: Retained<NSDateFormatter>,
 }
 impl State {
     fn new(config: Config) -> Self {
+        let clock = NSDateFormatter::new();
+        clock.setDateFormat(Some(ns_string!("HH:mm:ss")));
         Self {
+            clock,
             config,
             sample: None,
             error: "esperando lectura…".into(),
@@ -43,9 +47,7 @@ impl State {
                 self.history.push_back((Instant::now(), s.tps));
                 self.sample = Some(s);
                 self.error.clear();
-                let fmt = NSDateFormatter::new();
-                fmt.setDateFormat(Some(ns_string!("HH:mm:ss")));
-                self.updated = fmt.stringFromDate(&NSDate::now()).to_string();
+                self.updated = self.clock.stringFromDate(&NSDate::now()).to_string();
             }
             Err(e) => {
                 self.sample = None;
@@ -109,8 +111,8 @@ struct AppIvars {
     config_path: std::path::PathBuf,
     show_settings: bool,
     busy: Cell<bool>,
-    next: Cell<Instant>,
-    was_open: Cell<bool>,
+    timer: RefCell<Option<Retained<NSTimer>>>,
+    last_bar: RefCell<String>,
     show_on_start: bool,
 }
 define_class!(
@@ -129,8 +131,21 @@ define_class!(
             true
         }
     }
+    unsafe impl NSPopoverDelegate for App {
+        #[unsafe(method(popoverDidShow:))]
+        fn popover_opened(&self, _note: &NSNotification) {
+            if let Some(b) = self.ivars().status.get().and_then(|s| s.button(self.mtm())) { b.highlight(true); }
+            self.refresh();
+        }
+        #[unsafe(method(popoverDidClose:))]
+        fn popover_closed(&self, _note: &NSNotification) {
+            if let Some(b) = self.ivars().status.get().and_then(|s| s.button(self.mtm())) { b.highlight(false); }
+            self.schedule();
+        }
+    }
     impl App {
-        #[unsafe(method(tick:))] fn tick(&self,_timer:&NSTimer){self.poll();}
+        #[unsafe(method(tick:))] fn tick(&self,_timer:&NSTimer){self.refresh();}
+        #[unsafe(method(metricsReady:))] fn metrics_ready(&self,_note:&NSNotification){self.poll();}
         #[unsafe(method(clicked:))] fn clicked(&self,_sender:&AnyObject){
             let app=NSApplication::sharedApplication(self.mtm());
             match app.currentEvent().map(|e|e.r#type()) {
@@ -153,8 +168,8 @@ impl App {
         let iv = self.ivars();
         let mtm = self.mtm();
         let state = iv.state.borrow();
-        let status =
-            NSStatusBar::systemStatusBar().statusItemWithLength(drawing::bar_width(&state.config));
+        let status = NSStatusBar::systemStatusBar()
+            .statusItemWithLength(drawing::bar_width(&state.config) + 12.);
         let button = status.button(mtm).expect("status button");
         // SAFETY: the target is this retained delegate; selectors have the matching action signature.
         unsafe {
@@ -167,6 +182,7 @@ impl App {
         button.setAccessibilityLabel(Some(ns_string!("Kairos Monitor")));
         let popover = NSPopover::new(mtm);
         popover.setBehavior(NSPopoverBehavior::Transient);
+        popover.setDelegate(Some(ProtocolObject::from_ref(self)));
         popover.setAppearance(
             NSAppearance::appearanceNamed(unsafe { NSAppearanceNameDarkAqua }).as_deref(),
         );
@@ -190,10 +206,7 @@ impl App {
             };
             b.setFrame(rect(x, h - 25., w, 20.));
             b.setBordered(false);
-            b.setFont(Some(&NSFont::monospacedSystemFontOfSize_weight(
-                10.,
-                unsafe { NSFontWeightRegular },
-            )));
+            b.setFont(Some(&NSFont::systemFontOfSize(11.)));
             b.setContentTintColor(Some(&drawing::color(&iv.state.borrow().config.muted, 1.)));
             panel.addSubview(&b);
         }
@@ -204,14 +217,12 @@ impl App {
         iv.popover.set(popover).ok();
         iv.panel.set(panel).ok();
         unsafe {
-            let timer = NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
-                0.25,
+            NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
                 self,
-                sel!(tick:),
+                sel!(metricsReady:),
+                Some(ns_string!("KairosMetricsReady")),
                 None,
-                true,
             );
-            timer.setTolerance(0.1);
         }
         self.redraw();
         self.refresh();
@@ -221,23 +232,56 @@ impl App {
             self.toggle();
         }
     }
+    fn schedule(&self) {
+        let iv = self.ivars();
+        if let Some(timer) = iv.timer.borrow_mut().take() {
+            timer.invalidate();
+        }
+        if iv.busy.get() {
+            return;
+        }
+        let c = &iv.state.borrow().config;
+        let seconds = if iv.popover.get().is_some_and(|p| p.isShown()) {
+            c.open_interval
+        } else {
+            c.interval
+        };
+        // One wake per request, coalescible by macOS; no repeating UI polling timer.
+        let timer = unsafe {
+            NSTimer::scheduledTimerWithTimeInterval_target_selector_userInfo_repeats(
+                seconds as f64,
+                self,
+                sel!(tick:),
+                None,
+                false,
+            )
+        };
+        timer.setTolerance(seconds as f64 * 0.1);
+        *iv.timer.borrow_mut() = Some(timer);
+    }
     fn refresh(&self) {
         let iv = self.ivars();
-        if !iv.busy.replace(true)
-            && iv
-                .tx
-                .send((iv.revision.get(), iv.state.borrow().config.clone()))
-                .is_err()
+        if iv.busy.replace(true) {
+            return;
+        }
+        if let Some(timer) = iv.timer.borrow_mut().take() {
+            timer.invalidate();
+        }
+        if iv
+            .tx
+            .send((iv.revision.get(), iv.state.borrow().config.clone()))
+            .is_err()
         {
             iv.busy.set(false);
-            iv.state.borrow_mut().apply(Err("Worker detenido".into()));
+            iv.state
+                .borrow_mut()
+                .apply(Err("Conexión interrumpida".into()));
             self.redraw();
+            self.schedule();
         }
     }
     fn poll(&self) {
         let iv = self.ivars();
-        let opened = iv.popover.get().is_some_and(|p| p.isShown());
-        let changed = iv.was_open.replace(opened) != opened;
         if let Ok((revision, result)) = iv.rx.try_recv() {
             iv.busy.set(false);
             if revision != iv.revision.get() {
@@ -246,46 +290,35 @@ impl App {
             }
             iv.state.borrow_mut().apply(result);
             self.redraw();
-            let c = &iv.state.borrow().config;
-            iv.next.set(
-                Instant::now()
-                    + std::time::Duration::from_secs(if opened {
-                        c.open_interval
-                    } else {
-                        c.interval
-                    }),
-            );
-        }
-        if changed && opened {
-            self.refresh();
-        }
-        if Instant::now() >= iv.next.get() {
-            self.refresh();
+            self.schedule();
         }
     }
     fn redraw(&self) {
         let iv = self.ivars();
         let state = iv.state.borrow();
         if let Some(button) = iv.status.get().and_then(|s| s.button(self.mtm())) {
-            // Resolve the menu bar's own effective appearance (the panel is always the X1 dark theme).
-            let appearance = button.effectiveAppearance();
-            #[allow(deprecated)]
-            unsafe {
-                NSAppearance::setCurrentAppearance(Some(&appearance));
+            let key = format!(
+                "{:?}:{}:{}:{}:{}",
+                state.sample.as_ref().map(Sample::bar),
+                state.config.show_gpu,
+                state.config.show_memory,
+                state.config.show_tps,
+                state.config.value_chars
+            );
+            if *iv.last_bar.borrow() != key {
+                button.setImage(Some(&drawing::bar(&state)));
+                *iv.last_bar.borrow_mut() = key;
             }
-            button.setImage(Some(&drawing::bar(&state, &NSColor::labelColor())));
             button.setToolTip(Some(&NSString::from_str(&format!(
                 "{}\nIzquierdo: panel · Derecho: dashboard · Central: refrescar",
                 state.summary()
             ))));
             button.setAccessibilityLabel(Some(&NSString::from_str(&state.summary())));
-            #[allow(deprecated)]
-            unsafe {
-                NSAppearance::setCurrentAppearance(None);
-            }
         }
         if let Some(panel) = iv.panel.get() {
-            panel.setNeedsDisplay(true);
+            if iv.popover.get().is_some_and(|p| p.isShown()) {
+                panel.setNeedsDisplay(true);
+            }
             panel.setAccessibilityLabel(Some(&NSString::from_str(&state.summary())));
         }
     }
@@ -297,7 +330,9 @@ impl App {
                     p.performClose(None);
                 }
             } else if let Some(b) = iv.status.get().and_then(|s| s.button(self.mtm())) {
-                self.refresh();
+                if let Some(panel) = iv.panel.get() {
+                    panel.setNeedsDisplay(true);
+                }
                 #[allow(deprecated)]
                 NSApplication::sharedApplication(self.mtm()).activateIgnoringOtherApps(true);
                 p.showRelativeToRect_ofView_preferredEdge(b.bounds(), &b, NSRectEdge::MinY);
@@ -324,7 +359,17 @@ impl App {
         };
         let edited = settings.read(&iv.state.borrow().config);
         let config = match edited.and_then(|c| {
+            let old = iv.state.borrow().config.clone();
             c.save(&iv.config_path)?;
+            let desired = settings.login_enabled();
+            if (desired != crate::login::enabled() || (desired && crate::login::available()))
+                && let Err(e) = crate::login::set_enabled(desired)
+            {
+                old.save(&iv.config_path).map_err(|rollback| {
+                    format!("{e}. No se pudo restaurar la configuración: {rollback}")
+                })?;
+                return Err(e);
+            }
             Ok(c)
         }) {
             Ok(c) => c,
@@ -334,7 +379,7 @@ impl App {
             }
         };
         let height = drawing::height(&config);
-        let width = drawing::bar_width(&config);
+        let width = drawing::bar_width(&config) + 12.;
         {
             let mut state = iv.state.borrow_mut();
             if state.config.url != config.url || state.config.service != config.service {
@@ -362,7 +407,6 @@ impl App {
         if let Some(popover) = iv.popover.get() {
             popover.setContentSize(NSSize::new(drawing::WIDTH, height));
         }
-        iv.next.set(Instant::now());
         self.redraw();
         self.refresh();
         settings.close();
@@ -382,12 +426,24 @@ pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_set
     let (tx, requests) = mpsc::channel();
     let (results, rx) = mpsc::channel();
     std::thread::spawn(move || {
+        let client = model::Client::new();
         while let Ok((revision, worker_config)) = requests.recv() {
             if results
-                .send((revision, model::fetch(&worker_config)))
+                .send((
+                    revision,
+                    objc2::rc::autoreleasepool(|_| client.fetch(&worker_config)),
+                ))
                 .is_err()
             {
                 break;
+            }
+            let notify = block2::RcBlock::new(|| unsafe {
+                NSNotificationCenter::defaultCenter()
+                    .postNotificationName_object(ns_string!("KairosMetricsReady"), None);
+            });
+            // No AppKit objects cross threads; the main queue delivers the notification.
+            unsafe {
+                NSOperationQueue::mainQueue().addOperationWithBlock(&notify);
             }
         }
     });
@@ -403,8 +459,8 @@ pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_set
         config_path,
         show_settings,
         busy: Cell::new(false),
-        next: Cell::new(Instant::now()),
-        was_open: Cell::new(false),
+        timer: RefCell::new(None),
+        last_bar: RefCell::new(String::new()),
         show_on_start: show,
     });
     let delegate: Retained<App> = unsafe { msg_send![super(delegate), init] };
@@ -424,6 +480,35 @@ pub fn snapshot(config: Config, sample: Result<Sample, String>, path: &str) {
     #[allow(deprecated)]
     image.lockFocusFlipped(true);
     drawing::panel(&state);
+    #[allow(deprecated)]
+    image.unlockFocus();
+    let bitmap = NSBitmapImageRep::imageRepWithData(&image.TIFFRepresentation().unwrap()).unwrap();
+    let data = unsafe {
+        bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
+    }
+    .unwrap();
+    assert!(data.writeToFile_atomically(&NSString::from_str(path), true));
+}
+
+pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str) {
+    let mtm = MainThreadMarker::new().unwrap();
+    let _app = NSApplication::sharedApplication(mtm);
+    let mut state = State::new(config);
+    state.apply(sample);
+    let bar = drawing::bar(&state);
+    bar.setTemplate(false);
+    let image = NSImage::initWithSize(
+        NSImage::alloc(),
+        NSSize::new(drawing::bar_width(&state.config) + 12., 28.),
+    );
+    #[allow(deprecated)]
+    image.lockFocusFlipped(true);
+    drawing::fill(
+        rect(0., 0., image.size().width, 28.),
+        &NSColor::whiteColor(),
+        0.,
+    );
+    bar.drawInRect(rect(6., 5., bar.size().width, bar.size().height));
     #[allow(deprecated)]
     image.unlockFocus();
     let bitmap = NSBitmapImageRep::imageRepWithData(&image.TIFFRepresentation().unwrap()).unwrap();

@@ -1,0 +1,37 @@
+KAIROS MONITOR — Apple Silicon
+
+Requiere un Mac con chip M1 o posterior y macOS 12 o posterior.
+
+1. Arrastra KairosMonitor.app a Applications (Aplicaciones).
+2. Abre KairosMonitor desde Aplicaciones. Su icono aparece en la barra superior.
+3. En Ajustes, introduce la dirección de tu servidor y guarda.
+   Si utilizas http://kairos:8787, el nuevo Mac debe tener acceso a ese servidor
+   por Tailscale y resolver el nombre «kairos», o usar su IP.
+4. Activa «Abrir al iniciar sesión» si quieres que arranque automáticamente.
+   Esta opción está desactivada de forma predeterminada en instalaciones nuevas.
+
+PRIMERA APERTURA
+Esta distribución tiene firma local ad hoc, sin certificado Developer ID ni
+notarización de Apple. Si macOS bloquea su apertura, intenta abrirla primero y
+ve a Ajustes del Sistema > Privacidad y seguridad > Abrir igualmente.
+En macOS 12: Preferencias del Sistema > Seguridad y privacidad > General.
+Guía oficial: https://support.apple.com/es-es/102445
+
+USO
+Clic izquierdo: panel. Clic derecho: dashboard. Clic central: actualizar.
+Los avisos de temperatura y memoria aparecen en color dentro del panel.
+La barra utiliza el resaltado nativo de macOS, sin marcos superpuestos.
+En Ajustes puedes mostrar u ocultar GPU, RAM y tokens/s, cambiar los intervalos
+y desactivar el gráfico. Un intervalo mayor reduce las consultas de red.
+
+ACTUALIZAR
+Sal de la aplicación desde su panel y reemplázala en Aplicaciones.
+Los ajustes existentes se conservan.
+
+DESINSTALAR
+Desmarca «Abrir al iniciar sesión», guarda, sal y elimina la aplicación.
+Los ajustes quedan en ~/Library/Application Support/KairosMonitor/config.toml.
+Si ya eliminaste la app, puedes borrar su archivo de inicio:
+~/Library/LaunchAgents/es.amartin.kairosmonitor.plist
+
+No requiere Rust, Homebrew, Terminal ni descargar fuentes adicionales.

@@ -18,6 +18,9 @@ pub struct Config {
     pub border_alpha: f64,
     pub border: bool,
     pub graph: bool,
+    pub show_gpu: bool,
+    pub show_memory: bool,
+    pub show_tps: bool,
     pub history: usize,
     pub value_chars: usize,
     pub background: String,
@@ -40,10 +43,13 @@ impl Default for Config {
             mem_danger: 95.,
             temp_warn: 78.,
             temp_danger: 88.,
-            fill_alpha: 0.10,
-            border_alpha: 0.16,
-            border: true,
+            fill_alpha: 0.04,
+            border_alpha: 0.12,
+            border: false,
             graph: true,
+            show_gpu: true,
+            show_memory: true,
+            show_tps: true,
             history: 44,
             value_chars: 4,
             background: "#202229".into(),
@@ -72,6 +78,9 @@ impl Config {
     }
     pub fn validate(&self) -> Result<(), String> {
         let c = self;
+        if !c.show_gpu && !c.show_memory && !c.show_tps {
+            return Err("Selecciona al menos una métrica para la barra".into());
+        }
         for url in [&c.url, &c.dashboard] {
             let valid = url
                 .strip_prefix("http://")
@@ -220,6 +229,18 @@ mod tests {
                 "{key}={val}"
             );
         }
+    }
+    #[test]
+    fn old_configs_migrate_and_bar_keeps_one_metric() {
+        let old: Config = toml::from_str("border = true\nvalueChars = 4").unwrap();
+        assert!(old.show_gpu && old.show_memory && old.show_tps);
+        let mut c = old;
+        c.show_gpu = false;
+        c.show_memory = false;
+        c.show_tps = false;
+        assert!(c.validate().is_err());
+        c.show_tps = true;
+        assert!(c.validate().is_ok());
     }
     #[test]
     fn save_roundtrip() {

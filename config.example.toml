@@ -1,4 +1,4 @@
-# Mismos valores que el plugin amartin.kairos de X1.
+# Configuración de Kairos Monitor para Apple Silicon.
 url = "http://kairos:8787/api/metrics"
 dashboard = "http://kairos:8787/"
 service = "vllmcritic"
@@ -9,12 +9,15 @@ memWarn = 85
 memDanger = 95
 tempWarn = 78
 tempDanger = 88
-fillAlpha = 0.10
-borderAlpha = 0.16
-border = true
 graph = true
+showGpu = true
+showMemory = true
+showTps = true
 history = 44
-valueChars = 4
+valueChars = 5
+# El inicio de sesión se gestiona en Ajustes y pertenece a este Mac.
+# fillAlpha, borderAlpha y border se aceptan por compatibilidad con v0.1,
+# pero la barra ahora usa fondo transparente y resaltado nativo.
 # Paleta de X1 al portar el widget (acentos ajustados como Qt.lighter).
 background = "#202229"
 foreground = "#F2F3F7"
