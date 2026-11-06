@@ -6,7 +6,7 @@ Monitor nativo para la barra de menús de macOS, escrito en Rust y AppKit. Telem
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.4.0 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.0/KairosMonitor-0.4.0-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.4.1 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.1/KairosMonitor-0.4.1-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -37,6 +37,7 @@ Esta versión no tiene campo para clave API: los endpoints que requieren autoriz
 ## Barra y avisos
 
 - Clic izquierdo: abre o cierra el panel. Escape o clic fuera lo cierran.
+- El panel tiene una fila inferior separada con botones nativos de Refrescar, Dashboard, Actualizaciones, Ajustes y Salir. Sus iconos, fondos y áreas de clic permanecen visibles en todos los modos.
 - Clic derecho: abre el dashboard. Clic central: actualiza la lectura.
 - GPU, RAM y tokens/s se pueden mostrar por separado desde Ajustes; debe quedar al menos una métrica visible en el modo Kairos.
 - **Ancho fijo y compacto** para las métricas elegidas, cifras alineadas a la derecha y márgenes exteriores de 4 puntos. Cambiar cifras, entrar en aviso o perder la conexión no desplaza los demás widgets. Cambiar las métricas visibles o el tipo de servidor sí cambia el espacio necesario.
@@ -73,7 +74,7 @@ Para actualizar manualmente, sal y reemplaza la app en Aplicaciones. También pu
 
 Abre **Actualizaciones** en el panel o en Ajustes. La app consulta la última release estable de este repositorio como máximo una vez al día mientras está abierta. Puedes desactivar la búsqueda diaria o usar **Buscar actualizaciones** cuando quieras. La preferencia y la fecha se conservan entre reinicios.
 
-Cuando hay una versión mayor, el botón del panel muestra **↑ Actualizar a …**. Pulsa **Instalar y reiniciar**: descarga el DMG oficial arm64, comprueba su tamaño y SHA-256 publicado por GitHub, la integridad de la firma, el identificador y versión de la app, y la compatibilidad con macOS. Prepara el reemplazo antes de cerrar la versión actual, conserva los ajustes e inicio de sesión y vuelve a abrirla. Si falla el reemplazo o la orden de apertura, intenta restaurar la versión anterior.
+Cuando hay una versión mayor, el botón del panel muestra **Actualizar** (la versión aparece al pasar el puntero). Pulsa **Instalar y reiniciar**: descarga el DMG oficial arm64, comprueba su tamaño y SHA-256 publicado por GitHub, la integridad de la firma, el identificador y versión de la app, y la compatibilidad con macOS. Prepara el reemplazo antes de cerrar la versión actual, conserva los ajustes e inicio de sesión y vuelve a abrirla. Si falla el reemplazo o la orden de apertura, intenta restaurar la versión anterior.
 
 No instala sin pulsar el botón, no usa un servicio residente ni añade temporizadores de sondeo. Comparte el trabajador de red existente; durante una descarga de actualización las lecturas de métricas pueden esperar. El paquete se limita a 16 MiB y las respuestas normales siguen limitadas a 2 MiB. Para reemplazar la app necesitas permiso de escritura en su carpeta; `~/Applications` permite una instalación por usuario sin administrador.
 

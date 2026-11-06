@@ -1,5 +1,13 @@
 # Cambios
 
+## 0.4.1
+
+- Controles inferiores rediseñados como botones nativos con iconos, fondos visibles, mayor área de clic y separación uniforme.
+- Fila propia para las acciones, con margen inferior y un separador respecto al contenido.
+- La frecuencia de actualización pasa a la cabecera: ya no se superpone con Actualizaciones.
+- Botón Actualizar de ancho estable; la versión disponible aparece en su ayuda accesible.
+- Capturas del panel con los controles reales para revisar los modos con gráfico, sin gráfico, sin conexión y OpenAI.
+
 ## 0.4.0
 
 - Inicio de sesión registrado con launchd y verificado al guardar; reparación al actualizar y migración del antiguo agente.

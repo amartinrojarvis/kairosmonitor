@@ -6,7 +6,25 @@ use objc2_foundation::*;
 
 pub const WIDTH: f64 = 660.;
 pub fn height(c: &Config) -> f64 {
-    if c.graph { 462. } else { 386. }
+    if c.graph { 488. } else { 412. }
+}
+pub const FOOTER_HEIGHT: f64 = 50.;
+pub const FOOTER_BUTTON_HEIGHT: f64 = 30.;
+pub fn footer_button_y(height: f64) -> f64 {
+    height - FOOTER_HEIGHT + 10.
+}
+fn footer(c: &Config) {
+    let y = height(c) - FOOTER_HEIGHT;
+    fill(
+        rect(0., y, WIDTH, FOOTER_HEIGHT),
+        &color(&c.foreground, 0.025),
+        0.,
+    );
+    fill(
+        rect(20., y, WIDTH - 40., 1.),
+        &color(&c.foreground, 0.10),
+        0.,
+    );
 }
 pub fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
@@ -147,7 +165,14 @@ pub fn panel(state: &State) {
         &color(&c.background, 0.94),
         0.,
     );
-    label("Kairos Monitor", 20., 17., 420., c);
+    footer(c);
+    label(
+        &format!("Kairos Monitor · cada {} s", c.open_interval),
+        20.,
+        17.,
+        510.,
+        c,
+    );
     text(
         &if online {
             s("/hostname").to_uppercase()
@@ -327,12 +352,6 @@ pub fn panel(state: &State) {
             );
         }
     }
-    text(
-        &format!("cada {}s", c.open_interval),
-        rect(285., height(c) - 21., 150., 16.),
-        10.,
-        &color(&c.muted, 0.85),
-    );
     if c.graph {
         let seconds = state
             .history
@@ -372,6 +391,7 @@ fn catalog_panel(state: &State) {
         &color(&c.background, 0.94),
         0.,
     );
+    footer(c);
     label(
         "Kairos Monitor · API compatible con OpenAI",
         20.,
@@ -407,7 +427,7 @@ fn catalog_panel(state: &State) {
         .as_ref()
         .map(|s| s.models.as_slice())
         .unwrap_or(&[]);
-    let capacity = ((height(c) - 220.) / 28.) as usize;
+    let capacity = ((height(c) - FOOTER_HEIGHT - 210.) / 28.) as usize;
     for (i, model) in models.iter().take(capacity).enumerate() {
         let y = 141. + i as f64 * 28.;
         fill(
@@ -446,7 +466,7 @@ fn catalog_panel(state: &State) {
     }
     text(
         "Esta API no publica GPU, RAM ni tokens/s.",
-        rect(20., height(c) - 60., 620., 22.),
+        rect(20., height(c) - FOOTER_HEIGHT - 32., 620., 22.),
         11.,
         &color(&c.muted, 1.),
     );

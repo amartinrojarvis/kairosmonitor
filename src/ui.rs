@@ -288,30 +288,9 @@ impl App {
         drop(state);
         let panel = PanelView::new(mtm, iv.state.clone());
         let h = drawing::height(&iv.state.borrow().config);
-        for (title, x, w, action) in [
-            ("↻ Refrescar", 20., 107., sel!(refresh:)),
-            ("↗ Dashboard", 135., 111., sel!(dashboard:)),
-            ("Actualizaciones", 274., 168., sel!(updates:)),
-            ("Ajustes", 471., 77., sel!(settings:)),
-            ("Salir", 566., 74., sel!(quit:)),
-        ] {
-            let b = unsafe {
-                NSButton::buttonWithTitle_target_action(
-                    &NSString::from_str(title),
-                    Some(self),
-                    Some(action),
-                    mtm,
-                )
-            };
-            b.setFrame(rect(x, h - 25., w, 20.));
-            b.setBordered(false);
-            b.setFont(Some(&NSFont::systemFontOfSize(11.)));
-            b.setContentTintColor(Some(&drawing::color(&iv.state.borrow().config.muted, 1.)));
-            panel.addSubview(&b);
-            if title == "Actualizaciones" {
-                iv.update_button.set(b).ok();
-            }
-        }
+        iv.update_button
+            .set(footer_buttons(&panel, Some(self), mtm, h))
+            .ok();
         controller.setView(&panel);
         popover.setContentViewController(Some(&controller));
         popover.setContentSize(NSSize::new(drawing::WIDTH, h));
@@ -577,7 +556,7 @@ impl App {
             panel.setFrameSize(NSSize::new(drawing::WIDTH, height));
             for button in panel.subviews().iter() {
                 let mut r = button.frame();
-                r.origin.y = height - 25.;
+                r.origin.y = drawing::footer_button_y(height);
                 button.setFrame(r);
             }
         }
@@ -592,13 +571,18 @@ impl App {
         let iv = self.ivars();
         let prefs = iv.update_prefs.borrow();
         if let Some(button) = iv.update_button.get() {
-            button.setTitle(&NSString::from_str(
-                &prefs
-                    .available
-                    .as_ref()
-                    .map(|r| format!("↑ Actualizar a {}", r.version))
-                    .unwrap_or_else(|| "Actualizaciones".into()),
-            ));
+            button.setTitle(&NSString::from_str(if prefs.available.is_some() {
+                "Actualizar"
+            } else {
+                "Actualizaciones"
+            }));
+            let detail = prefs
+                .available
+                .as_ref()
+                .map(|r| format!("Versión {} disponible · abrir actualizaciones", r.version))
+                .unwrap_or_else(|| "Buscar e instalar nuevas versiones".into());
+            button.setToolTip(Some(&NSString::from_str(&detail)));
+            button.setAccessibilityLabel(Some(&NSString::from_str(&detail)));
         }
         if let Some(window) = iv.update_window.get() {
             window.refresh(&prefs, iv.update_busy.get(), &iv.update_message.borrow());
@@ -709,6 +693,95 @@ impl App {
     }
 }
 
+/// Shared native controls for the live panel and visual snapshots.
+fn footer_buttons(
+    panel: &NSView,
+    target: Option<&AnyObject>,
+    mtm: MainThreadMarker,
+    height: f64,
+) -> Retained<NSButton> {
+    let mut updates = None;
+    for (title, symbol, x, width, action, help) in [
+        (
+            "Refrescar",
+            "arrow.clockwise",
+            20.,
+            116.,
+            sel!(refresh:),
+            "Consultar las métricas ahora",
+        ),
+        (
+            "Dashboard",
+            "arrow.up.right.square",
+            144.,
+            120.,
+            sel!(dashboard:),
+            "Abrir el dashboard en el navegador",
+        ),
+        (
+            "Actualizaciones",
+            "arrow.down.circle",
+            272.,
+            174.,
+            sel!(updates:),
+            "Buscar e instalar nuevas versiones",
+        ),
+        (
+            "Ajustes",
+            "gearshape",
+            454.,
+            100.,
+            sel!(settings:),
+            "Configurar Kairos Monitor",
+        ),
+        (
+            "Salir",
+            "power",
+            562.,
+            78.,
+            sel!(quit:),
+            "Cerrar Kairos Monitor",
+        ),
+    ] {
+        let button = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                &NSString::from_str(title),
+                target,
+                Some(action),
+                mtm,
+            )
+        };
+        button.setFrame(rect(
+            x,
+            drawing::footer_button_y(height),
+            width,
+            drawing::FOOTER_BUTTON_HEIGHT,
+        ));
+        button.setBezelStyle(NSBezelStyle::Push);
+        button.setBordered(true);
+        button.setFont(Some(&NSFont::systemFontOfSize(12.)));
+        button.setContentTintColor(Some(&NSColor::labelColor()));
+        button.setToolTip(Some(&NSString::from_str(help)));
+        button.setAccessibilityLabel(Some(&NSString::from_str(title)));
+        if let Some(image) = NSImage::imageWithSystemSymbolName_accessibilityDescription(
+            &NSString::from_str(symbol),
+            None,
+        ) {
+            let size = image.size();
+            let scale = 13. / size.width.max(size.height);
+            image.setSize(NSSize::new(size.width * scale, size.height * scale));
+            button.setImage(Some(&image));
+            button.setImagePosition(NSCellImagePosition::ImageLeft);
+            button.setImageHugsTitle(true);
+        }
+        panel.addSubview(&button);
+        if title == "Actualizaciones" {
+            updates = Some(button);
+        }
+    }
+    updates.unwrap()
+}
+
 pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_settings: bool) {
     let mtm = MainThreadMarker::new().expect("main thread");
     let application = NSApplication::sharedApplication(mtm);
@@ -805,16 +878,16 @@ pub fn snapshot(config: Config, sample: Result<Sample, String>, path: &str) {
     let _app = NSApplication::sharedApplication(mtm);
     let mut state = State::new(config);
     state.apply(sample);
-    let image = NSImage::initWithSize(
-        NSImage::alloc(),
-        NSSize::new(drawing::WIDTH, drawing::height(&state.config)),
+    let height = drawing::height(&state.config);
+    let panel = PanelView::new(mtm, Rc::new(RefCell::new(state)));
+    panel.setAppearance(
+        NSAppearance::appearanceNamed(unsafe { NSAppearanceNameDarkAqua }).as_deref(),
     );
-    #[allow(deprecated)]
-    image.lockFocusFlipped(true);
-    drawing::panel(&state);
-    #[allow(deprecated)]
-    image.unlockFocus();
-    let bitmap = NSBitmapImageRep::imageRepWithData(&image.TIFFRepresentation().unwrap()).unwrap();
+    footer_buttons(&panel, None, mtm, height);
+    let bitmap = panel
+        .bitmapImageRepForCachingDisplayInRect(panel.bounds())
+        .unwrap();
+    panel.cacheDisplayInRect_toBitmapImageRep(panel.bounds(), &bitmap);
     let data = unsafe {
         bitmap.representationUsingType_properties(NSBitmapImageFileType::PNG, &NSDictionary::new())
     }
