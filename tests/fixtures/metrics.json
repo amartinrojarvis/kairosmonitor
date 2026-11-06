@@ -1,0 +1,272 @@
+{
+  "hostname": "kairos",
+  "uptime": 10339.65,
+  "tailscale": {
+    "ips": [
+      "100.64.0.10"
+    ]
+  },
+  "memory": {
+    "total": 130661068800,
+    "available": 36275965952,
+    "used": 94385102848,
+    "percent": 72.2,
+    "cached": 2829164544,
+    "buffers": 156880896,
+    "swapTotal": 17179865088,
+    "swapUsed": 0,
+    "swapPercent": 0
+  },
+  "cpu": {
+    "percent": 3.1,
+    "count": 20,
+    "load": [
+      0.68,
+      0.89,
+      1.64
+    ]
+  },
+  "gpu": [
+    {
+      "id": "nvidia-0",
+      "vendor": "NVIDIA",
+      "name": "NVIDIA GB10",
+      "utilization": 0,
+      "memoryTotal": null,
+      "memoryUsed": null,
+      "memoryPercent": 0,
+      "temperature": 36,
+      "powerDraw": 10.38,
+      "powerLimit": null
+    }
+  ],
+  "temperature": {
+    "max": 36,
+    "avg": 36,
+    "sensors": [
+      {
+        "id": "nvidia-0",
+        "label": "NVIDIA GPU",
+        "value": 36
+      }
+    ]
+  },
+  "network": {
+    "rxPerSec": 11943,
+    "txPerSec": 133171
+  },
+  "disk": [
+    {
+      "filesystem": "/dev/nvme0n1p2",
+      "mount": "/",
+      "total": 4030802149376,
+      "used": 2144733638656,
+      "available": 1681238417408,
+      "percent": 57
+    },
+    {
+      "filesystem": "/dev/sda2",
+      "mount": "/media/amartin/B868-4EF0",
+      "total": 999962705920,
+      "used": 913629773824,
+      "available": 86332932096,
+      "percent": 92
+    },
+    {
+      "filesystem": "/dev/nvme0n1p1",
+      "mount": "/boot/efi",
+      "total": 535805952,
+      "used": 6676480,
+      "available": 529129472,
+      "percent": 2
+    },
+    {
+      "filesystem": "efivarfs",
+      "mount": "/sys/firmware/efi/efivars",
+      "total": 262144,
+      "used": 22528,
+      "available": 240640,
+      "percent": 9
+    }
+  ],
+  "vllmThroughput": {
+    "ok": true,
+    "ready": true,
+    "tps": 0,
+    "maxTps": 194,
+    "running": 0,
+    "waiting": 0,
+    "model": "Qwen3.8-Flash-Next",
+    "consumers": []
+  },
+  "services": [
+    {
+      "id": "vllmcritic",
+      "running": true,
+      "model": "Qwen3.8-Flash-Next",
+      "maxModelLen": 262144
+    },
+    {
+      "id": "vllmvision",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "vllmmuse",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "kairosRouter",
+      "running": true,
+      "model": "vllmcritic",
+      "maxModelLen": 262144
+    },
+    {
+      "id": "comfyui",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "openwebui",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "sunshine",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "herdr",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "deepseekHarness",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "kairosStudio",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterApp",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterCodex",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterGateway",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterProductionCodex",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterProductionConnector",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterWorker",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "reeldeckApp",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "kairosVirallensApi",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "virallensDashboard",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "proposalAnalyticsAdmin",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "tresVoces",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "tufotoRedesignLocal",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "kairosIphoneWidget",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "oliviaVramCalc",
+      "running": true,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "guionmasterSupabase",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "madrikinaLocalCustom",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "madrikinaLocalFio",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    },
+    {
+      "id": "madrikinaLocalLegacy",
+      "running": false,
+      "model": null,
+      "maxModelLen": null
+    }
+  ]
+}

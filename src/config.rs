@@ -1,0 +1,237 @@
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct Config {
+    pub url: String,
+    pub dashboard: String,
+    pub service: String,
+    pub interval: u64,
+    pub open_interval: u64,
+    pub timeout: u64,
+    pub mem_warn: f64,
+    pub mem_danger: f64,
+    pub temp_warn: f64,
+    pub temp_danger: f64,
+    pub fill_alpha: f64,
+    pub border_alpha: f64,
+    pub border: bool,
+    pub graph: bool,
+    pub history: usize,
+    pub value_chars: usize,
+    pub background: String,
+    pub foreground: String,
+    pub muted: String,
+    pub green: String,
+    pub yellow: String,
+    pub red: String,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            url: "http://kairos:8787/api/metrics".into(),
+            dashboard: "http://kairos:8787/".into(),
+            service: "vllmcritic".into(),
+            interval: 5,
+            open_interval: 2,
+            timeout: 4,
+            mem_warn: 85.,
+            mem_danger: 95.,
+            temp_warn: 78.,
+            temp_danger: 88.,
+            fill_alpha: 0.10,
+            border_alpha: 0.16,
+            border: true,
+            graph: true,
+            history: 44,
+            value_chars: 4,
+            background: "#202229".into(),
+            foreground: "#F2F3F7".into(),
+            muted: "#8B909B".into(),
+            green: "#33FF52".into(),
+            yellow: "#FFCE65".into(),
+            red: "#FF8D87".into(),
+        }
+    }
+}
+impl Config {
+    pub fn path() -> PathBuf {
+        PathBuf::from(std::env::var_os("HOME").unwrap())
+            .join("Library/Application Support/KairosMonitor/config.toml")
+    }
+    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        let c: Self = if path.exists() {
+            toml::from_str(&std::fs::read_to_string(path).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?
+        } else {
+            Self::default()
+        };
+        c.validate()?;
+        Ok(c)
+    }
+    pub fn validate(&self) -> Result<(), String> {
+        let c = self;
+        for url in [&c.url, &c.dashboard] {
+            let valid = url
+                .strip_prefix("http://")
+                .or_else(|| url.strip_prefix("https://"))
+                .is_some_and(|rest| {
+                    !rest.is_empty()
+                        && !rest.starts_with('/')
+                        && !rest.chars().any(char::is_whitespace)
+                });
+            if !valid {
+                return Err("Introduce una URL http:// o https:// con un servidor válido".into());
+            }
+        }
+        if !(1..=3600).contains(&c.interval)
+            || !(1..=3600).contains(&c.open_interval)
+            || !(1..=60).contains(&c.timeout)
+            || !(8..=600).contains(&c.history)
+            || !(2..=8).contains(&c.value_chars)
+        {
+            return Err("Intervalos, timeout, history o valueChars fuera de rango".into());
+        }
+        for color in [
+            &c.background,
+            &c.foreground,
+            &c.muted,
+            &c.green,
+            &c.yellow,
+            &c.red,
+        ] {
+            if color.len() != 7
+                || !color.starts_with('#')
+                || !color[1..].bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return Err(format!("Color inválido: {color}"));
+            }
+        }
+        for alpha in [c.fill_alpha, c.border_alpha] {
+            if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
+                return Err("Alfa fuera de rango".into());
+            }
+        }
+        for threshold in [c.mem_warn, c.mem_danger, c.temp_warn, c.temp_danger] {
+            if !threshold.is_finite() || threshold < 0. {
+                return Err("Umbral inválido".into());
+            }
+        }
+        if c.service.trim().is_empty() {
+            return Err("El servicio no puede estar vacío".into());
+        }
+        if c.mem_warn > 100. || c.mem_danger > 100. || c.mem_warn >= c.mem_danger {
+            return Err("RAM: el aviso debe ser menor que el crítico (0–100 %)".into());
+        }
+        if c.temp_warn >= c.temp_danger || c.temp_danger > 150. {
+            return Err("Temperatura: aviso < crítico, máximo 150 °C".into());
+        }
+        Ok(())
+    }
+    pub fn edited(
+        &self,
+        inputs: &[(String, String)],
+        graph: bool,
+        border: bool,
+    ) -> Result<Self, String> {
+        let mut value = toml::Value::try_from(self).map_err(|e| e.to_string())?;
+        for (key, text) in inputs {
+            let previous = value
+                .get(key)
+                .ok_or_else(|| format!("Ajuste desconocido: {key}"))?;
+            let next = match previous {
+                toml::Value::Integer(_) => toml::Value::Integer(
+                    text.trim()
+                        .parse()
+                        .map_err(|_| format!("{key}: introduce un número entero"))?,
+                ),
+                toml::Value::Float(_) => toml::Value::Float(
+                    text.trim()
+                        .parse()
+                        .map_err(|_| format!("{key}: introduce un número"))?,
+                ),
+                toml::Value::String(_) => toml::Value::String(text.trim().into()),
+                _ => return Err(format!("Tipo de ajuste no editable: {key}")),
+            };
+            value[key] = next;
+        }
+        value["graph"] = toml::Value::Boolean(graph);
+        value["border"] = toml::Value::Boolean(border);
+        let config: Self = value
+            .try_into()
+            .map_err(|e: toml::de::Error| e.to_string())?;
+        config.validate()?;
+        Ok(config)
+    }
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        self.validate()?;
+        let parent = path.parent().ok_or("Ruta de configuración inválida")?;
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+        let data = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
+        std::fs::write(&tmp, data).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn form_preserves_palette_and_applies_fields() {
+        let original = Config {
+            green: "#112233".into(),
+            ..Config::default()
+        };
+        let edited = original
+            .edited(
+                &[
+                    ("interval".into(), "9".into()),
+                    ("url".into(), "http://other:8787/api/metrics".into()),
+                ],
+                false,
+                false,
+            )
+            .unwrap();
+        assert_eq!(edited.interval, 9);
+        assert_eq!(edited.green, "#112233");
+        assert!(!edited.graph);
+        assert!(!edited.border);
+    }
+    #[test]
+    fn reject_invalid_form() {
+        let c = Config::default();
+        for (key, val) in [
+            ("interval", "0"),
+            ("interval", "-1"),
+            ("interval", "abc"),
+            ("timeout", "61"),
+            ("history", "601"),
+            ("url", "http://"),
+            ("url", "file:///etc/passwd"),
+            ("memWarn", "99"),
+            ("tempDanger", "40"),
+            ("memWarn", "NaN"),
+            ("service", ""),
+        ] {
+            assert!(
+                c.edited(&[(key.into(), val.into())], true, true).is_err(),
+                "{key}={val}"
+            );
+        }
+    }
+    #[test]
+    fn save_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("kairos-config-test-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let c = Config {
+            interval: 7,
+            ..Config::default()
+        };
+        c.save(&path).unwrap();
+        assert_eq!(Config::load(&path).unwrap().interval, 7);
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+}

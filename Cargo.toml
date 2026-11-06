@@ -1,0 +1,19 @@
+[package]
+name = "kairosmonitor"
+version = "0.1.0"
+edition = "2024"
+description = "Kairos telemetry in the macOS menu bar"
+
+[dependencies]
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "objc2-core-graphics"] }
+objc2-foundation = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

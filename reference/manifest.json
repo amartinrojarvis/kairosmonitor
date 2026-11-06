@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "amartin.kairos",
+  "name": "Kairos",
+  "version": "1.0.0",
+  "author": "amartin",
+  "description": "RAM, GPU y tokens/s de vllmcritic, leidos de Kairos Dash",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Kairos",
+    "description": "System memory, GPU y vllmcritic tok/s desde Kairos Dash",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "url": "http://kairos:8787/api/metrics",
+      "dashboard": "http://kairos:8787/",
+      "service": "vllmcritic",
+      "interval": 5,
+      "openInterval": 2,
+      "timeout": 4,
+      "valueChars": 4
+    },
+    "schema": [
+      { "key": "url", "type": "string", "label": "Endpoint de metricas" },
+      { "key": "dashboard", "type": "string", "label": "URL del dashboard (clic derecho)" },
+      { "key": "service", "type": "string", "label": "Servicio vLLM" },
+      { "key": "interval", "type": "number", "label": "Intervalo panel cerrado (s)" },
+      { "key": "openInterval", "type": "number", "label": "Intervalo panel abierto (s)" },
+      { "key": "timeout", "type": "number", "label": "Timeout (s)" },
+      { "key": "memWarn", "type": "number", "label": "RAM en aviso (%)" },
+      { "key": "memDanger", "type": "number", "label": "RAM en peligro (%)" },
+      { "key": "gpuWarn", "type": "number", "label": "GPU en aviso (%)" },
+      { "key": "gpuDanger", "type": "number", "label": "GPU en peligro (%)" },
+      { "key": "tempWarn", "type": "number", "label": "GPU en aviso (C)" },
+      { "key": "tempDanger", "type": "number", "label": "GPU en peligro (C)" },
+      { "key": "fillAlpha", "type": "number", "label": "Fondo (alfa)" },
+      { "key": "borderAlpha", "type": "number", "label": "Borde (alfa)" },
+      { "key": "border", "type": "boolean", "label": "Mostrar borde" },
+      { "key": "graph", "type": "boolean", "label": "Grafico tok/s" },
+      { "key": "history", "type": "number", "label": "Puntos del grafico" },
+      { "key": "valueChars", "type": "number", "label": "Ancho de valor (glifos)" }
+    ]
+  }
+}
