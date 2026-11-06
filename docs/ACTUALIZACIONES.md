@@ -1,5 +1,7 @@
 # Versiones, actualización e inicio de sesión
 
+Para retomar el proyecto como desarrollador o agente, consulta primero la [guía completa de desarrollo y publicación](DESARROLLO.md).
+
 ## Publicar una versión nueva
 
 1. Incrementa la versión estable `MAJOR.MINOR.PATCH` en `Cargo.toml` y ejecuta `cargo check` para sincronizar `Cargo.lock`.

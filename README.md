@@ -80,6 +80,10 @@ No instala sin pulsar el botón, no usa un servicio residente ni añade temporiz
 
 Solo se detectan **releases estables con un DMG adjunto**, no cada commit o tag aislado. Las versiones anteriores a 0.4.0 requieren una actualización manual inicial para incorporar este mecanismo. [Publicar nuevas versiones y diagnóstico](docs/ACTUALIZACIONES.md).
 
+## Retomar el desarrollo
+
+La [guía de desarrollo y publicación](docs/DESARROLLO.md) documenta arquitectura, decisiones, pruebas, instalación, publicación, recuperación y límites verificados. Los agentes deben empezar por [AGENTS.md](AGENTS.md). Consulta [CHANGELOG.md](CHANGELOG.md) para la evolución de la app.
+
 ## Compilar y empaquetar
 
 Requiere herramientas de Xcode, Rust estable y el target `aarch64-apple-darwin`.
