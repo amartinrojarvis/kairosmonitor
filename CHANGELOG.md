@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.4.0
+
+- Inicio de sesión registrado con launchd y verificado al guardar; reparación al actualizar y migración del antiguo agente.
+- Lectura correcta de los estados `disabled/enabled` y `true/false` de launchctl.
+- Lanzador breve mediante LaunchServices: evita instancias duplicadas y permite desactivar el inicio sin cerrar la app.
+- Búsqueda diaria opcional de releases estables, búsqueda manual y aviso en el panel.
+- Instalación con un clic, verificación SHA-256 y del bundle, reinicio y recuperación ante errores del reemplazo.
+- Guía y script de publicación para que las siguientes versiones se detecten automáticamente.
+
 ## 0.3.0
 
 - Barra de ancho fijo por configuración, cifras alineadas y márgenes compactos; sin saltos al cambiar los valores o perder la conexión.

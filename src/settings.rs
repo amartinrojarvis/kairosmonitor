@@ -64,6 +64,17 @@ impl Settings {
             rect(22., 665., 530., 28.),
             20.,
         );
+        let updates = unsafe {
+            NSButton::buttonWithTitle_target_action(
+                ns_string!("Actualizaciones…"),
+                Some(target),
+                Some(sel!(updates:)),
+                mtm,
+            )
+        };
+        updates.setFrame(rect(400., 662., 168., 32.));
+        updates.setBezelStyle(NSBezelStyle::Push);
+        view.addSubview(&updates);
         let hint = label(
             &view,
             mtm,

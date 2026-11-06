@@ -5,13 +5,44 @@ mod model;
 mod network;
 mod settings;
 mod ui;
+mod update_window;
+mod updates;
 use config::Config;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if let Some(index) = args.iter().position(|s| s == "--finish-update") {
+        let result = args
+            .get(index + 1)
+            .ok_or_else(|| "Falta el manifiesto".to_owned())
+            .and_then(|path| updates::finish_install(std::path::Path::new(path)));
+        if let Err(error) = result {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    if args.iter().any(|s| s == "--check-updates") {
+        match updates::check(&model::Client::new()) {
+            Ok(Some(release)) => println!("Disponible: {}", release.version),
+            Ok(None) => println!("Versión {} al día", updates::CURRENT),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if args.iter().any(|s| s == "--launch-at-login") {
+        if let Err(error) = login::launch() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if args.iter().any(|s| s == "--help") {
         println!(
-            "KairosMonitor\n  --check              Consulta y verifica el endpoint\n  --open               Abre el panel al iniciar\n  --settings           Abre los ajustes al iniciar\n  --config RUTA        Configuración alternativa\n  --snapshot PNG       Renderiza una captura nativa\n  --snapshot-bar PNG   Vista de la barra\n  --native --dark --selected  Opciones de captura de la barra\n  --snapshot-settings PNG  Vista de ajustes\n  --login-item status|on|off  Inicio de sesión\n  --fixture JSON       Datos locales para --snapshot\n  --offline            Sin conexión para --snapshot"
+            "KairosMonitor\n  --check              Consulta y verifica el endpoint\n  --check-updates      Busca una versión nueva en GitHub\n  --open               Abre el panel al iniciar\n  --settings           Abre los ajustes al iniciar\n  --config RUTA        Configuración alternativa\n  --snapshot PNG       Renderiza una captura nativa\n  --snapshot-bar PNG   Vista de la barra\n  --native --dark --selected  Opciones de captura de la barra\n  --snapshot-settings PNG  Vista de ajustes\n  --login-item status|on|off  Inicio de sesión\n  --fixture JSON       Datos locales para --snapshot\n  --offline            Sin conexión para --snapshot"
         );
         return;
     }
@@ -95,6 +126,9 @@ fn main() {
             ui::snapshot(config, sample, path);
         }
         return;
+    }
+    if let Err(error) = login::repair_if_enabled() {
+        eprintln!("{error}");
     }
     ui::run(
         config,

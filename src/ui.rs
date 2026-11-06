@@ -168,16 +168,32 @@ struct ProbeReply {
     input: String,
     result: Result<Sample, String>,
 }
+enum WorkerRequest {
+    Metrics(u64, Config),
+    Probe(Config),
+    CheckUpdate,
+    InstallUpdate(crate::updates::Release, std::path::PathBuf),
+}
+enum UpdateReply {
+    Checked(Result<Option<crate::updates::Release>, String>),
+    Prepared(Result<crate::updates::Prepared, String>),
+}
 struct AppIvars {
     state: Rc<RefCell<State>>,
     status: OnceCell<Retained<NSStatusItem>>,
     alerts: OnceCell<Retained<AlertOverlay>>,
     popover: OnceCell<Retained<NSPopover>>,
     panel: OnceCell<Retained<PanelView>>,
-    tx: Sender<(Option<u64>, Config)>,
+    tx: Sender<WorkerRequest>,
     rx: Receiver<(u64, Result<Sample, String>)>,
     revision: Cell<u64>,
     probe_rx: Receiver<ProbeReply>,
+    update_rx: Receiver<UpdateReply>,
+    update_prefs: RefCell<crate::updates::Preferences>,
+    update_busy: Cell<bool>,
+    update_message: RefCell<String>,
+    update_window: OnceCell<crate::update_window::UpdateWindow>,
+    update_button: OnceCell<Retained<NSButton>>,
     settings: OnceCell<crate::settings::Settings>,
     config_path: std::path::PathBuf,
     show_settings: bool,
@@ -215,7 +231,7 @@ define_class!(
         }
     }
     impl App {
-        #[unsafe(method(tick:))] fn tick(&self,_timer:&NSTimer){self.refresh();}
+        #[unsafe(method(tick:))] fn tick(&self,_timer:&NSTimer){self.refresh();self.check_updates(false);}
         #[unsafe(method(metricsReady:))] fn metrics_ready(&self,_note:&NSNotification){self.poll();}
         #[unsafe(method(clicked:))] fn clicked(&self,_sender:&AnyObject){
             let app=NSApplication::sharedApplication(self.mtm());
@@ -229,6 +245,11 @@ define_class!(
         #[unsafe(method(dashboard:))] fn on_dashboard(&self,_sender:&AnyObject){self.dashboard();}
         #[unsafe(method(testConnection:))] fn test_connection(&self, _sender: &AnyObject) { self.probe(); }
         #[unsafe(method(probeReady:))] fn probe_ready(&self, _note: &NSNotification) { self.probe_result(); }
+        #[unsafe(method(updates:))] fn on_updates(&self, _sender: &AnyObject) { self.open_updates(); }
+        #[unsafe(method(checkUpdates:))] fn on_check_updates(&self, _sender: &AnyObject) { self.check_updates(true); }
+        #[unsafe(method(installUpdate:))] fn on_install_update(&self, _sender: &AnyObject) { self.install_update(); }
+        #[unsafe(method(automaticUpdates:))] fn on_automatic_updates(&self, _sender: &AnyObject) { self.automatic_updates(); }
+        #[unsafe(method(updatesReady:))] fn on_updates_ready(&self, _note: &NSNotification) { self.update_result(); }
         #[unsafe(method(settings:))] fn on_settings(&self,_sender:&AnyObject){self.open_settings();}
         #[unsafe(method(saveSettings:))] fn on_save_settings(&self,_sender:&AnyObject){self.save_settings();}
         #[unsafe(method(cancelSettings:))] fn on_cancel_settings(&self,_sender:&AnyObject){if let Some(s)=self.ivars().settings.get(){s.close();}}
@@ -270,6 +291,7 @@ impl App {
         for (title, x, w, action) in [
             ("↻ Refrescar", 20., 107., sel!(refresh:)),
             ("↗ Dashboard", 135., 111., sel!(dashboard:)),
+            ("Actualizaciones", 274., 168., sel!(updates:)),
             ("Ajustes", 471., 77., sel!(settings:)),
             ("Salir", 566., 74., sel!(quit:)),
         ] {
@@ -286,6 +308,9 @@ impl App {
             b.setFont(Some(&NSFont::systemFontOfSize(11.)));
             b.setContentTintColor(Some(&drawing::color(&iv.state.borrow().config.muted, 1.)));
             panel.addSubview(&b);
+            if title == "Actualizaciones" {
+                iv.update_button.set(b).ok();
+            }
         }
         controller.setView(&panel);
         popover.setContentViewController(Some(&controller));
@@ -307,8 +332,18 @@ impl App {
                 None,
             );
         }
+        unsafe {
+            NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                self,
+                sel!(updatesReady:),
+                Some(ns_string!("KairosUpdatesReady")),
+                None,
+            );
+        }
         self.redraw();
         self.refresh();
+        self.update_controls();
+        self.check_updates(false);
         if iv.show_settings {
             self.open_settings();
         } else if iv.show_on_start {
@@ -352,7 +387,10 @@ impl App {
         }
         if iv
             .tx
-            .send((Some(iv.revision.get()), iv.state.borrow().config.clone()))
+            .send(WorkerRequest::Metrics(
+                iv.revision.get(),
+                iv.state.borrow().config.clone(),
+            ))
             .is_err()
         {
             iv.busy.set(false);
@@ -466,7 +504,7 @@ impl App {
         }
         let input = c.url.clone();
         // Probes and polling share the worker and its persistent HTTP session.
-        if iv.tx.send((None, c)).is_err() {
+        if iv.tx.send(WorkerRequest::Probe(c)).is_err() {
             settings.finish_probe(
                 &input,
                 &Err("El servicio de conexión no está disponible".into()),
@@ -550,6 +588,119 @@ impl App {
         self.refresh();
         settings.close();
     }
+    fn update_controls(&self) {
+        let iv = self.ivars();
+        let prefs = iv.update_prefs.borrow();
+        if let Some(button) = iv.update_button.get() {
+            button.setTitle(&NSString::from_str(
+                &prefs
+                    .available
+                    .as_ref()
+                    .map(|r| format!("↑ Actualizar a {}", r.version))
+                    .unwrap_or_else(|| "Actualizaciones".into()),
+            ));
+        }
+        if let Some(window) = iv.update_window.get() {
+            window.refresh(&prefs, iv.update_busy.get(), &iv.update_message.borrow());
+        }
+    }
+    fn open_updates(&self) {
+        let iv = self.ivars();
+        if let Some(popover) = iv.popover.get() {
+            popover.close();
+        }
+        iv.update_window
+            .get_or_init(|| crate::update_window::UpdateWindow::new(self.mtm(), self))
+            .show();
+        if iv.update_message.borrow().is_empty() {
+            *iv.update_message.borrow_mut() = iv.update_prefs.borrow().available.as_ref()
+                .map(|r| format!("Versión {} disponible. Pulsa Instalar y reiniciar para actualizar conservando tus ajustes.", r.version))
+                .unwrap_or_else(|| "Consulta las versiones publicadas en GitHub. Solo se descarga e instala cuando tú lo indicas.".into());
+        }
+        self.update_controls();
+    }
+    fn check_updates(&self, manual: bool) {
+        let iv = self.ivars();
+        if iv.update_busy.get() || (!manual && !iv.update_prefs.borrow().due()) {
+            return;
+        }
+        iv.update_busy.set(true);
+        let mut prefs = iv.update_prefs.borrow_mut();
+        prefs.mark_checked();
+        let _ = prefs.save();
+        drop(prefs);
+        *iv.update_message.borrow_mut() = "Buscando una nueva versión…".into();
+        if iv.tx.send(WorkerRequest::CheckUpdate).is_err() {
+            iv.update_busy.set(false);
+            *iv.update_message.borrow_mut() = "El servicio de conexión no está disponible".into();
+        }
+        self.update_controls();
+    }
+    fn automatic_updates(&self) {
+        let iv = self.ivars();
+        if let Some(window) = iv.update_window.get() {
+            let mut prefs = iv.update_prefs.borrow_mut();
+            let old = prefs.automatic;
+            prefs.automatic = window.automatic();
+            if let Err(error) = prefs.save() {
+                prefs.automatic = old;
+                *iv.update_message.borrow_mut() = error;
+            }
+        }
+        self.update_controls();
+    }
+    fn install_update(&self) {
+        let iv = self.ivars();
+        if iv.update_busy.get() {
+            return;
+        }
+        let Some(release) = iv.update_prefs.borrow().available.clone() else {
+            return;
+        };
+        match crate::login::current_bundle().and_then(|bundle| {
+            iv.tx
+                .send(WorkerRequest::InstallUpdate(release, bundle))
+                .map_err(|e| e.to_string())
+        }) {
+            Ok(()) => {
+                iv.update_busy.set(true);
+                *iv.update_message.borrow_mut() = "Descargando y verificando la actualización… La app se reiniciará cuando esté preparada.".into();
+            }
+            Err(error) => *iv.update_message.borrow_mut() = error,
+        }
+        self.update_controls();
+    }
+    fn update_result(&self) {
+        let iv = self.ivars();
+        while let Ok(reply) = iv.update_rx.try_recv() {
+            iv.update_busy.set(false);
+            match reply {
+                UpdateReply::Checked(result) => match result {
+                    Ok(release) => {
+                        *iv.update_message.borrow_mut() = release.as_ref().map(|r| format!("Versión {} disponible. Pulsa Instalar y reiniciar para actualizar conservando tus ajustes.", r.version)).unwrap_or_else(|| format!("Estás al día. Versión instalada: {}.", crate::updates::CURRENT));
+                        iv.update_prefs.borrow_mut().available = release;
+                        let _ = iv.update_prefs.borrow().save();
+                    }
+                    Err(error) => {
+                        *iv.update_message.borrow_mut() =
+                            format!("No se pudo buscar una actualización: {error}")
+                    }
+                },
+                UpdateReply::Prepared(result) => match result
+                    .and_then(crate::updates::start_install)
+                {
+                    Ok(()) => {
+                        NSApplication::sharedApplication(self.mtm()).terminate(None);
+                        return;
+                    }
+                    Err(error) => {
+                        *iv.update_message.borrow_mut() = format!("No se pudo actualizar: {error}")
+                    }
+                },
+            }
+            self.update_controls();
+        }
+    }
     fn dashboard(&self) {
         let url = self.ivars().state.borrow().config.dashboard.clone();
         if let Some(url) = NSURL::URLWithString(&NSString::from_str(&url)) {
@@ -565,27 +716,47 @@ pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_set
     let (tx, requests) = mpsc::channel();
     let (results, rx) = mpsc::channel();
     let (probe_tx, probe_rx) = mpsc::channel();
+    let (update_tx, update_rx) = mpsc::channel();
     std::thread::spawn(move || {
         let client = model::Client::new();
-        while let Ok((revision, worker_config)) = requests.recv() {
-            let notification = if let Some(revision) = revision {
-                let result = objc2::rc::autoreleasepool(|_| client.fetch(&worker_config));
-                if results.send((revision, result)).is_err() {
-                    break;
+        while let Ok(request) = requests.recv() {
+            let notification = match request {
+                WorkerRequest::Metrics(revision, config) => {
+                    let result = objc2::rc::autoreleasepool(|_| client.fetch(&config));
+                    if results.send((revision, result)).is_err() {
+                        break;
+                    }
+                    "KairosMetricsReady"
                 }
-                "KairosMetricsReady"
-            } else {
-                let result = objc2::rc::autoreleasepool(|_| client.probe(&worker_config));
-                if probe_tx
-                    .send(ProbeReply {
-                        input: worker_config.url,
-                        result,
-                    })
-                    .is_err()
-                {
-                    break;
+                WorkerRequest::Probe(config) => {
+                    let result = objc2::rc::autoreleasepool(|_| client.probe(&config));
+                    if probe_tx
+                        .send(ProbeReply {
+                            input: config.url,
+                            result,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                    "KairosProbeReady"
                 }
-                "KairosProbeReady"
+                WorkerRequest::CheckUpdate => {
+                    let result = objc2::rc::autoreleasepool(|_| crate::updates::check(&client));
+                    if update_tx.send(UpdateReply::Checked(result)).is_err() {
+                        break;
+                    }
+                    "KairosUpdatesReady"
+                }
+                WorkerRequest::InstallUpdate(release, target) => {
+                    let result = objc2::rc::autoreleasepool(|_| {
+                        crate::updates::prepare(&client, &release, target)
+                    });
+                    if update_tx.send(UpdateReply::Prepared(result)).is_err() {
+                        break;
+                    }
+                    "KairosUpdatesReady"
+                }
             };
             let notify = block2::RcBlock::new(move || unsafe {
                 NSNotificationCenter::defaultCenter()
@@ -607,6 +778,15 @@ pub fn run(config: Config, config_path: std::path::PathBuf, show: bool, show_set
         rx,
         revision: Cell::new(0),
         probe_rx,
+        update_rx,
+        update_prefs: RefCell::new(crate::updates::Preferences::load()),
+        update_busy: Cell::new(false),
+        update_message: RefCell::new(
+            std::fs::read_to_string(Config::path().with_file_name("update-result.txt"))
+                .unwrap_or_default(),
+        ),
+        update_window: OnceCell::new(),
+        update_button: OnceCell::new(),
         settings: OnceCell::new(),
         config_path,
         show_settings,

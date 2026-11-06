@@ -36,13 +36,18 @@ configuración de claves API; los endpoints protegidos muestran HTTP 401/403.
 Más información: https://github.com/amartinrojarvis/kairosmonitor
 
 ACTUALIZAR
-Sal de la aplicación desde su panel y reemplázala en Aplicaciones.
-Los ajustes existentes se conservan.
+Abre Actualizaciones y pulsa «Buscar actualizaciones».
+Si hay una versión nueva, pulsa «Instalar y reiniciar». Los ajustes y el inicio
+de sesión se conservan. La app también busca versiones una vez al día mientras
+está abierta; puedes desactivar esa búsqueda en la ventana de Actualizaciones.
+Desde versiones anteriores a 0.4.0, sal y reemplaza la app manualmente una vez.
+El inicio automático ocurre al entrar en tu sesión de macOS, no antes de login.
 
 DESINSTALAR
 Desmarca «Abrir al iniciar sesión», guarda, sal y elimina la aplicación.
 Los ajustes quedan en ~/Library/Application Support/KairosMonitor/config.toml.
 Si ya eliminaste la app, puedes borrar su archivo de inicio:
-~/Library/LaunchAgents/es.amartin.kairosmonitor.plist
+~/Library/LaunchAgents/es.amartin.kairosmonitor.login.plist
+En versiones anteriores: ~/Library/LaunchAgents/es.amartin.kairosmonitor.plist
 
 No requiere Rust, Homebrew, Terminal ni descargar fuentes adicionales.

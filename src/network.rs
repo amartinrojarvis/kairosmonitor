@@ -12,6 +12,7 @@ use std::{
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 struct Transfer {
     id: usize,
+    limit: usize,
     bytes: Vec<u8>,
     error: Option<String>,
     sender: mpsc::Sender<Result<Vec<u8>, String>>,
@@ -60,8 +61,8 @@ define_class!(
         ) {
             let mut guard = self.ivars().transfer.lock().unwrap();
             let allow = if let Some(t) = guard.as_mut().filter(|t| t.id == task.taskIdentifier()) {
-                if response.expectedContentLength() > MAX_BYTES as i64 {
-                    t.error = Some("La respuesta supera 2 MiB".into());
+                if response.expectedContentLength() > t.limit as i64 {
+                    t.error = Some(format!("La respuesta supera {} MiB", t.limit / 1024 / 1024));
                 } else if let Some(http) = response.downcast_ref::<NSHTTPURLResponse>() {
                     if !(200..300).contains(&http.statusCode()) {
                         t.error = Some(format!("Error HTTP {}", http.statusCode()));
@@ -84,8 +85,8 @@ define_class!(
         fn data(&self, _session: &NSURLSession, task: &NSURLSessionDataTask, data: &NSData) {
             let mut guard = self.ivars().transfer.lock().unwrap();
             if let Some(t) = guard.as_mut().filter(|t| t.id == task.taskIdentifier()) {
-                if t.bytes.len().saturating_add(data.length()) > MAX_BYTES {
-                    t.error = Some("La respuesta supera 2 MiB".into());
+                if t.bytes.len().saturating_add(data.length()) > t.limit {
+                    t.error = Some(format!("La respuesta supera {} MiB", t.limit / 1024 / 1024));
                     task.cancel();
                 } else if t.error.is_none() {
                     // The immutable NSData is alive for the full callback; bytes are copied now.
@@ -169,6 +170,14 @@ impl Client {
         ))
     }
     fn get(&self, endpoint: &str, timeout: u64) -> Result<Vec<u8>, String> {
+        self.get_bounded(endpoint, timeout, MAX_BYTES)
+    }
+    pub fn get_bounded(
+        &self,
+        endpoint: &str,
+        timeout: u64,
+        limit: usize,
+    ) -> Result<Vec<u8>, String> {
         let url = NSURL::URLWithString(&NSString::from_str(endpoint)).ok_or("URL no válida")?;
         let request = NSURLRequest::requestWithURL_cachePolicy_timeoutInterval(
             &url,
@@ -179,6 +188,7 @@ impl Client {
         let task = self.session.dataTaskWithRequest(&request);
         *self.delegate.ivars().transfer.lock().unwrap() = Some(Transfer {
             id: task.taskIdentifier(),
+            limit,
             bytes: Vec::with_capacity(8192),
             error: None,
             sender,

@@ -6,6 +6,7 @@ APP="$HOME/Applications/KairosMonitor.app"
 mkdir -p "$HOME/Applications"
 # Stop the old instance without changing its next-login preference.
 launchctl bootout "gui/$(id -u)/es.amartin.kairosmonitor" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/es.amartin.kairosmonitor.login" 2>/dev/null || true
 pkill -TERM -f "^$APP/Contents/MacOS/kairosmonitor( |$)" 2>/dev/null || true
 # Wait for the old process to leave LaunchServices before replacing its bundle.
 for attempt in {1..30}; do

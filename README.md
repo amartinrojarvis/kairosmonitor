@@ -6,7 +6,7 @@ Monitor nativo para la barra de menús de macOS, escrito en Rust y AppKit. Telem
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.3.0 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.3.0/KairosMonitor-0.3.0-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.4.0 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.0/KairosMonitor-0.4.0-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -65,9 +65,19 @@ La frecuencia predeterminada es 5 s con el panel cerrado y 2 s abierto; puedes a
 
 **Ajustes** permite modificar conexión, intervalos, timeout, historial, umbrales, gráfico, métricas visibles e inicio de sesión. Los cambios se aplican al guardar sin reiniciar. Las configuraciones anteriores se conservan: `service` se acepta por compatibilidad, pero el servicio se detecta automáticamente. Los antiguos campos `border`, `fillAlpha`, `borderAlpha` y `valueChars` no controlan el dibujo ni el ancho actual.
 
-Configuración: `~/Library/Application Support/KairosMonitor/config.toml`. Editarla a mano requiere reiniciar. El inicio de sesión pertenece a cada Mac y se gestiona mediante `~/Library/LaunchAgents/es.amartin.kairosmonitor.plist`. La app debe estar en `/Applications` o `~/Applications` para activarlo. No utiliza `KeepAlive`: **Salir** mantiene la app cerrada hasta abrirla de nuevo o iniciar otra sesión.
+Configuración: `~/Library/Application Support/KairosMonitor/config.toml`. Editarla a mano requiere reiniciar. El inicio de sesión pertenece a cada Mac y se gestiona mediante `~/Library/LaunchAgents/es.amartin.kairosmonitor.login.plist`. El lanzador se registra y se comprueba al guardar; solo vive unos instantes al iniciar sesión. Abre la app mediante LaunchServices y evita duplicados. Desactivarlo no cierra la app. Los registros antiguos se migran sin perder la preferencia; una actualización repara el registro si estaba activado. La app debe estar en `/Applications` o `~/Applications` para activarlo. No utiliza `KeepAlive`: **Salir** mantiene la app cerrada hasta abrirla de nuevo o iniciar otra sesión.
 
-Para actualizar, sal y reemplaza la app en Aplicaciones. Para desinstalar, desactiva el inicio de sesión, guarda, sal y elimina la app. Se conservan tus ajustes.
+Para actualizar manualmente, sal y reemplaza la app en Aplicaciones. También puedes utilizar el actualizador integrado. Para desinstalar, desactiva el inicio de sesión, guarda, sal y elimina la app. Se conservan tus ajustes.
+
+## Actualizaciones desde la app
+
+Abre **Actualizaciones** en el panel o en Ajustes. La app consulta la última release estable de este repositorio como máximo una vez al día mientras está abierta. Puedes desactivar la búsqueda diaria o usar **Buscar actualizaciones** cuando quieras. La preferencia y la fecha se conservan entre reinicios.
+
+Cuando hay una versión mayor, el botón del panel muestra **↑ Actualizar a …**. Pulsa **Instalar y reiniciar**: descarga el DMG oficial arm64, comprueba su tamaño y SHA-256 publicado por GitHub, la integridad de la firma, el identificador y versión de la app, y la compatibilidad con macOS. Prepara el reemplazo antes de cerrar la versión actual, conserva los ajustes e inicio de sesión y vuelve a abrirla. Si falla el reemplazo o la orden de apertura, intenta restaurar la versión anterior.
+
+No instala sin pulsar el botón, no usa un servicio residente ni añade temporizadores de sondeo. Comparte el trabajador de red existente; durante una descarga de actualización las lecturas de métricas pueden esperar. El paquete se limita a 16 MiB y las respuestas normales siguen limitadas a 2 MiB. Para reemplazar la app necesitas permiso de escritura en su carpeta; `~/Applications` permite una instalación por usuario sin administrador.
+
+Solo se detectan **releases estables con un DMG adjunto**, no cada commit o tag aislado. Las versiones anteriores a 0.4.0 requieren una actualización manual inicial para incorporar este mecanismo. [Publicar nuevas versiones y diagnóstico](docs/ACTUALIZACIONES.md).
 
 ## Compilar y empaquetar
 
@@ -88,6 +98,7 @@ La versión del bundle y del DMG se obtiene de `Cargo.toml`. El empaquetado comp
 cargo test
 cargo clippy --all-targets -- -D warnings
 cargo run -- --check
+cargo run -- --check-updates
 cargo run -- --open
 cargo run -- --snapshot /tmp/kairos.png --fixture tests/fixtures/metrics.json
 cargo run -- --snapshot /tmp/kairos-offline.png --offline
@@ -96,8 +107,8 @@ cargo run -- --snapshot-bar /tmp/kairos-native.png --fixture tests/fixtures/metr
 cargo run -- --snapshot-settings /tmp/kairos-settings.png
 ```
 
-Las pruebas cubren reutilización de conexión, datos frescos sin caché, errores HTTP/JSON, límite de tamaño, timeout, detección de endpoints y modelos, ausencia de telemetría en OpenAI, límites de avisos, abreviaturas, migración de ajustes y rutas de inicio de sesión. Las capturas nativas permiten comprobar el botón real y que la capa de cifras coloreadas no intercepte clics. `--config RUTA` permite usar ajustes alternativos; `--login-item status|on|off` consulta o cambia el inicio de sesión del binario instalado.
+Las pruebas cubren reutilización de conexión, datos frescos sin caché, errores HTTP/JSON, límite de tamaño, timeout, detección de endpoints y modelos, ausencia de telemetría en OpenAI, límites de avisos, abreviaturas, migración de ajustes y rutas de inicio de sesión, formatos de estado de launchctl, comparación numérica de versiones, rechazo de paquetes alterados y recuperación del reemplazo ante errores. Las capturas nativas permiten comprobar el botón real y que la capa de cifras coloreadas no intercepte clics. `--config RUTA` permite usar ajustes alternativos; `--login-item status|on|off` consulta o cambia el inicio de sesión del binario instalado.
 
-`src/network.rs` gestiona la red; `src/model.rs` interpreta datos y avisos; `src/ui.rs` coordina AppKit y consultas; `src/drawing.rs` dibuja barra y panel; `src/config.rs` valida y guarda ajustes; `src/settings.rs` contiene el formulario; `src/login.rs` gestiona el inicio de sesión.
+`src/network.rs` gestiona la red; `src/model.rs` interpreta datos y avisos; `src/ui.rs` coordina AppKit y consultas; `src/drawing.rs` dibuja barra y panel; `src/config.rs` valida y guarda ajustes; `src/settings.rs` contiene el formulario; `src/login.rs` gestiona el inicio de sesión; `src/updates.rs` verifica e instala releases y `src/update_window.rs` contiene sus controles.
 
 `reference/` conserva el plugin original de X1 (Omarchy/Quickshell). Kairos Monitor consulta el endpoint directamente: X1 no necesita estar encendido. La fuente histórica y su licencia permanecen en el repositorio, pero no se distribuyen dentro de la aplicación.
