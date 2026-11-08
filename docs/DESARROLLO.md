@@ -85,6 +85,8 @@ La telemetría y los metadatos tienen límite de 2 MiB; la descarga del actualiz
 
 La barra tiene columnas de capacidad fija, cifras alineadas a la derecha, abreviaturas y margen exterior de 4 puntos. Al cambiar de valor, entrar en aviso o quedar sin conexión no debe cambiar su ancho. Cambiar las métricas visibles o descubrir otro tipo de servidor puede ajustar el ancho una vez.
 
+Desde 0.4.3, `barBackground` elige un fondo suave opcional en la capa del botón nativo, sin cambiar su geometría ni añadir temporizadores. `none` conserva el fondo transparente de las configuraciones anteriores. Es independiente de `background`, que sigue siendo el fondo del panel. El selector «Fondo de color» se guarda con el resto del formulario; cancelar o probar conexión no lo aplica.
+
 Los símbolos y cifras normales se dibujan como plantilla nativa. `AlertOverlay` pinta solo las cifras afectadas y devuelve un hit test nulo para no interceptar clics. Se comprobó que temperatura y presión de memoria pueden cambiar el color aunque el texto visible no cambie: la caché debe incluir los niveles de aviso. Mantén los colores suaves y la adaptación clara/oscura. Una tasa alta de tokens/s no es una alarma.
 
 En 0.4.0 el texto «cada 2 s» ocupaba el mismo espacio que Actualizaciones. Desde 0.4.1 la frecuencia está en la cabecera y el pie tiene una fila propia de 50 puntos, botones nativos de 30 puntos, iconos y márgenes uniformes. Usa `footer_buttons` y `footer_button_y` como fuente común para la UI y las capturas; no vuelvas a colocar texto libre encima de los botones. Los paneles con y sin gráfico tienen alturas diferentes.

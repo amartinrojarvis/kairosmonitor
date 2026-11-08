@@ -1,6 +1,6 @@
 [package]
 name = "kairosmonitor"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"
 description = "Kairos telemetry in the macOS menu bar"
 
@@ -8,9 +8,9 @@ description = "Kairos telemetry in the macOS menu bar"
 block2 = "0.6"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
-    "std", "libc", "NSApplication", "NSWindow", "NSView", "NSTextField", "NSFont", "NSFontDescriptor", "NSColor", "NSButton", "NSControl", "NSStatusItem", "NSStatusBar", "NSStatusBarButton", "NSPopover", "NSViewController", "NSEvent", "NSAppearance", "NSGraphics", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSBezierPath", "NSParagraphStyle", "NSAttributedString", "NSStringDrawing", "NSResponder", "NSRunningApplication", "NSWorkspace", "NSAccessibility", "NSAccessibilityProtocols", "NSCell", "NSButtonCell", "NSText", "NSMenuItem", "NSLayoutConstraint", "NSLayoutAnchor", "NSColorSpace", "objc2-quartz-core", "objc2-core-foundation", "objc2-core-graphics"
+    "std", "libc", "NSApplication", "NSWindow", "NSView", "NSTextField", "NSFont", "NSFontDescriptor", "NSColor", "NSButton", "NSControl", "NSStatusItem", "NSStatusBar", "NSStatusBarButton", "NSPopover", "NSViewController", "NSEvent", "NSAppearance", "NSGraphics", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSBezierPath", "NSParagraphStyle", "NSAttributedString", "NSStringDrawing", "NSResponder", "NSRunningApplication", "NSWorkspace", "NSAccessibility", "NSAccessibilityProtocols", "NSCell", "NSButtonCell", "NSPopUpButton", "NSText", "NSMenuItem", "NSLayoutConstraint", "NSLayoutAnchor", "NSColorSpace", "objc2-quartz-core", "objc2-core-foundation", "objc2-core-graphics"
 ] }
-objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "objc2-core-graphics"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["CALayer", "objc2-core-graphics", "objc2-core-foundation"] }
 objc2-foundation = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

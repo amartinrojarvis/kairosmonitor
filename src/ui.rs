@@ -110,6 +110,16 @@ impl PanelView {
         unsafe { msg_send![super(this),initWithFrame:rect(0.,0.,drawing::WIDTH,h)] }
     }
 }
+/// A static backing color keeps the native template and selection drawing intact.
+fn apply_bar_background(button: &NSStatusBarButton, background: crate::config::BarBackground) {
+    button.setWantsLayer(true);
+    if let Some(layer) = button.layer() {
+        let color = background.hex().map(|hex| drawing::color(hex, 0.24));
+        layer.setBackgroundColor(color.as_ref().map(|color| color.CGColor()).as_deref());
+        layer.setCornerRadius(6.);
+    }
+}
+
 struct AlertOverlayIvars {
     values: RefCell<Vec<drawing::AlertValue>>,
 }
@@ -404,14 +414,15 @@ impl App {
         }
         if let Some(button) = iv.status.get().and_then(|s| s.button(self.mtm())) {
             let key = format!(
-                "{:?}:{:?}:{:?}:{:?}:{}:{}:{}",
+                "{:?}:{:?}:{:?}:{:?}:{}:{}:{}:{:?}",
                 state.sample.as_ref().map(Sample::bar),
                 state.sample.as_ref().map(|s| s.bar_alerts(&state.config)),
                 state.kind,
                 state.sample.as_ref().map(|s| &s.models),
                 state.config.show_gpu,
                 state.config.show_memory,
-                state.config.show_tps
+                state.config.show_tps,
+                state.config.bar_background
             );
             if *iv.last_bar.borrow() != key {
                 let artwork = drawing::bar(&state);
@@ -420,6 +431,7 @@ impl App {
                     .unwrap()
                     .setLength(artwork.image.size().width + 2. * drawing::BAR_PADDING);
                 button.setImage(Some(&artwork.image));
+                apply_bar_background(&button, state.config.bar_background);
                 if let Some(overlay) = iv.alerts.get() {
                     overlay.update(&button, &artwork);
                     *overlay.ivars().values.borrow_mut() = artwork.alerts;
@@ -991,6 +1003,13 @@ pub fn snapshot_bar(config: Config, sample: Result<Sample, String>, path: &str, 
         NSColor::whiteColor()
     };
     drawing::fill(rect(0., 0., image.size().width, 28.), &background, 0.);
+    if let Some(hex) = state.config.bar_background.hex() {
+        drawing::fill(
+            rect(0., 0., image.size().width, 28.),
+            &drawing::color(hex, 0.24),
+            6.,
+        );
+    }
     bar.drawInRect(rect(
         drawing::BAR_PADDING,
         5.,
@@ -1045,6 +1064,7 @@ pub fn snapshot_native_bar(
         button.setTarget(Some(&app));
         button.setAction(Some(sel!(stop:)));
     }
+    apply_bar_background(&button, state.config.bar_background);
     button.highlight(selected);
     let overlay = AlertOverlay::new(mtm);
     button.addSubview(&overlay);

@@ -16,6 +16,8 @@ graph = true
 showGpu = true
 showMemory = true
 showTps = true
+# Fondo suave de la barra: none, blue, sage, lavender, sand, rose o gray.
+barBackground = "none"
 history = 44
 # El inicio de sesión se gestiona en Ajustes y pertenece a este Mac.
 # valueChars, fillAlpha, borderAlpha y border se aceptan por compatibilidad con v0.1,

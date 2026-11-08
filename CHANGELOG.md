@@ -1,5 +1,10 @@
 # Cambios
 
+## 0.4.3
+
+- Ajuste «Fondo de color» para la barra de menús: azul suave, salvia, lavanda, arena, rosa suave y gris perla, o sin color.
+- Fondo translúcido y discreto que conserva el ancho fijo, el texto nativo y los avisos de las cifras. Las configuraciones anteriores siguen sin color de fondo.
+
 ## 0.4.2
 
 - Ventana nativa Acerca de, accesible desde Ajustes, con autoría de Alberto Martín, icono y versión de la app.

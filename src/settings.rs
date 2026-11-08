@@ -1,5 +1,5 @@
 use crate::{
-    config::Config,
+    config::{BarBackground, Config},
     drawing::rect,
     model::{Sample, ServerKind},
 };
@@ -12,6 +12,7 @@ pub struct Settings {
     pub window: Retained<NSWindow>,
     fields: Vec<(&'static str, Retained<NSTextField>)>,
     graph: Retained<NSButton>,
+    background: Retained<NSPopUpButton>,
     metrics: Vec<Retained<NSButton>>,
     login: Retained<NSButton>,
     error: Retained<NSTextField>,
@@ -38,7 +39,7 @@ impl Settings {
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 NSWindow::alloc(mtm),
-                rect(0., 0., 590., 710.),
+                rect(0., 0., 590., 758.),
                 NSWindowStyleMask::Titled | NSWindowStyleMask::Closable,
                 NSBackingStoreType::Buffered,
                 false,
@@ -61,7 +62,7 @@ impl Settings {
             &view,
             mtm,
             "Kairos Monitor",
-            rect(22., 665., 240., 28.),
+            rect(22., 713., 240., 28.),
             20.,
         );
         let about = unsafe {
@@ -72,7 +73,7 @@ impl Settings {
                 mtm,
             )
         };
-        about.setFrame(rect(280., 662., 116., 32.));
+        about.setFrame(rect(280., 710., 116., 32.));
         about.setBezelStyle(NSBezelStyle::Push);
         view.addSubview(&about);
         let updates = unsafe {
@@ -83,7 +84,7 @@ impl Settings {
                 mtm,
             )
         };
-        updates.setFrame(rect(400., 662., 168., 32.));
+        updates.setFrame(rect(400., 710., 168., 32.));
         updates.setBezelStyle(NSBezelStyle::Push);
         view.addSubview(&updates);
         let hint = label(
@@ -94,14 +95,14 @@ impl Settings {
                 env!("CARGO_PKG_VERSION"),
                 " · Los cambios se aplican al guardar."
             ),
-            rect(22., 641., 530., 20.),
+            rect(22., 689., 530., 20.),
             12.,
         );
         hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
         let mut fields = Vec::new();
         for (key, title, y) in [
-            ("url", "URL del servidor", 606.),
-            ("dashboard", "Dashboard", 571.),
+            ("url", "URL del servidor", 654.),
+            ("dashboard", "Dashboard", 619.),
         ] {
             label(&view, mtm, title, rect(22., y + 2., 146., 22.), 12.);
             let field = NSTextField::initWithFrame(
@@ -121,39 +122,39 @@ impl Settings {
                 mtm,
             )
         };
-        test_button.setFrame(rect(462., 603., 104., 30.));
+        test_button.setFrame(rect(462., 651., 104., 30.));
         test_button.setFont(Some(&NSFont::systemFontOfSize(11.)));
         view.addSubview(&test_button);
         label(
             &view,
             mtm,
             "Modelos detectados",
-            rect(22., 538., 146., 22.),
+            rect(22., 586., 146., 22.),
             12.,
         );
         let models = NSTextField::wrappingLabelWithString(
             ns_string!("Detección automática al conectar."),
             mtm,
         );
-        models.setFrame(rect(175., 518., 391., 44.));
+        models.setFrame(rect(175., 566., 391., 44.));
         models.setFont(Some(&NSFont::systemFontOfSize(11.)));
         models.setTextColor(Some(&NSColor::secondaryLabelColor()));
         view.addSubview(&models);
-        for (title, y) in [("ACTUALIZACIÓN", 498.), ("UMBRALES DE AVISO", 380.)] {
+        for (title, y) in [("ACTUALIZACIÓN", 546.), ("UMBRALES DE AVISO", 428.)] {
             let title = label(&view, mtm, title, rect(22., y, 540., 18.), 10.);
             title.setTextColor(Some(&NSColor::secondaryLabelColor()));
         }
         for (key, title, x, y) in [
-            ("interval", "Panel cerrado (s)", 22., 462.),
-            ("openInterval", "Panel abierto (s)", 312., 462.),
-            ("timeout", "Tiempo de espera (s)", 22., 424.),
-            ("history", "Lecturas del gráfico", 312., 424.),
-            ("memWarn", "RAM aviso (%)", 22., 346.),
-            ("memDanger", "RAM crítico (%)", 312., 346.),
-            ("gpuWarn", "GPU aviso (%)", 22., 308.),
-            ("gpuDanger", "GPU crítico (%)", 312., 308.),
-            ("tempWarn", "GPU aviso (°C)", 22., 270.),
-            ("tempDanger", "GPU crítico (°C)", 312., 270.),
+            ("interval", "Panel cerrado (s)", 22., 510.),
+            ("openInterval", "Panel abierto (s)", 312., 510.),
+            ("timeout", "Tiempo de espera (s)", 22., 472.),
+            ("history", "Lecturas del gráfico", 312., 472.),
+            ("memWarn", "RAM aviso (%)", 22., 394.),
+            ("memDanger", "RAM crítico (%)", 312., 394.),
+            ("gpuWarn", "GPU aviso (%)", 22., 356.),
+            ("gpuDanger", "GPU crítico (%)", 312., 356.),
+            ("tempWarn", "GPU aviso (°C)", 22., 318.),
+            ("tempDanger", "GPU crítico (°C)", 312., 318.),
         ] {
             label(&view, mtm, title, rect(x, y + 2., 165., 22.), 12.);
             let field =
@@ -175,13 +176,13 @@ impl Settings {
                 mtm,
             )
         };
-        graph.setFrame(rect(22., 225., 282., 24.));
+        graph.setFrame(rect(22., 273., 282., 24.));
         view.addSubview(&graph);
         let heading = label(
             &view,
             mtm,
             "BARRA DE MENÚS",
-            rect(22., 190., 540., 18.),
+            rect(22., 238., 540., 18.),
             10.,
         );
         heading.setTextColor(Some(&NSColor::secondaryLabelColor()));
@@ -195,10 +196,30 @@ impl Settings {
                     mtm,
                 )
             };
-            checkbox.setFrame(rect(x, 159., 170., 24.));
+            checkbox.setFrame(rect(x, 207., 170., 24.));
             view.addSubview(&checkbox);
             metrics.push(checkbox);
         }
+        label(
+            &view,
+            mtm,
+            "Fondo de color",
+            rect(22., 165., 146., 22.),
+            12.,
+        );
+        let background = NSPopUpButton::initWithFrame_pullsDown(
+            NSPopUpButton::alloc(mtm),
+            rect(175., 160., 215., 28.),
+            false,
+        );
+        for (_, title) in BarBackground::OPTIONS {
+            background.addItemWithTitle(&NSString::from_str(title));
+        }
+        background.setAccessibilityLabel(Some(ns_string!("Fondo de color")));
+        background.setToolTip(Some(ns_string!(
+            "Tono suave para distinguir el widget en la barra de menús."
+        )));
+        view.addSubview(&background);
         let login = unsafe {
             NSButton::checkboxWithTitle_target_action(
                 ns_string!("Abrir al iniciar sesión"),
@@ -253,6 +274,7 @@ impl Settings {
             window,
             fields,
             graph,
+            background,
             metrics,
             login,
             error,
@@ -271,6 +293,12 @@ impl Settings {
             };
             field.setStringValue(&NSString::from_str(&text));
         }
+        self.background.selectItemAtIndex(
+            BarBackground::OPTIONS
+                .iter()
+                .position(|(value, _)| *value == c.bar_background)
+                .unwrap_or(0) as isize,
+        );
         self.graph.setState(if c.graph {
             NSControlStateValueOn
         } else {
@@ -314,6 +342,8 @@ impl Settings {
             .collect::<Vec<_>>();
         let mut base = base.clone();
         base.service = "auto".into();
+        base.bar_background =
+            BarBackground::OPTIONS[self.background.indexOfSelectedItem().max(0) as usize].0;
         base.show_gpu = self.metrics[0].state() == NSControlStateValueOn;
         base.show_memory = self.metrics[1].state() == NSControlStateValueOn;
         base.show_tps = self.metrics[2].state() == NSControlStateValueOn;

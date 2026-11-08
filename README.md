@@ -6,7 +6,7 @@ Monitor nativo para la barra de menús de macOS, escrito en Rust y AppKit. Telem
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.4.2 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.2/KairosMonitor-0.4.2-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.4.3 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.3/KairosMonitor-0.4.3-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -41,7 +41,8 @@ Esta versión no tiene campo para clave API: los endpoints que requieren autoriz
 - Clic derecho: abre el dashboard. Clic central: actualiza la lectura.
 - GPU, RAM y tokens/s se pueden mostrar por separado desde Ajustes; debe quedar al menos una métrica visible en el modo Kairos.
 - **Ancho fijo y compacto** para las métricas elegidas, cifras alineadas a la derecha y márgenes exteriores de 4 puntos. Cambiar cifras, entrar en aviso o perder la conexión no desplaza los demás widgets. Cambiar las métricas visibles o el tipo de servidor sí cambia el espacio necesario.
-- Las cifras grandes se abrevian (`1.2k`, `12M`; memoria en `G`, `T`, `P`, `E`). La barra conserva fondo transparente y resaltado nativo, sin marcos laterales superpuestos.
+- Las cifras grandes se abrevian (`1.2k`, `12M`; memoria en `G`, `T`, `P`, `E`). La barra conserva el resaltado nativo, sin marcos laterales superpuestos.
+- **Fondo de color**, en Ajustes → Barra de menús: sin color (predeterminado), azul suave, salvia, lavanda, arena, rosa suave o gris perla. Los tonos translúcidos distinguen el widget con discreción y se aplican al guardar.
 - **Solo la cifra afectada** cambia de color: ocre suave para aviso y rojo apagado para crítico, adaptados a apariencia clara y oscura. Los iconos, separadores y demás cifras mantienen el color nativo. Al pasar el puntero se explica el motivo.
 
 | Aviso configurable | Aviso inicial | Crítico inicial |

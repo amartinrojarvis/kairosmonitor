@@ -471,8 +471,8 @@ fn catalog_panel(state: &State) {
         &color(&c.muted, 1.),
     );
 }
-/// Transparent template: AppKit owns the background, selected state and light/dark tint.
-/// No custom pill/frame can collide with the status button's highlight.
+/// Transparent template: AppKit owns the selected state and light/dark text tint.
+/// The optional static background belongs to the native button backing layer.
 pub const BAR_PADDING: f64 = 4.;
 pub struct AlertValue {
     pub value: String,

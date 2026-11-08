@@ -1,6 +1,42 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Separate from the historical panel palette; old configurations remain transparent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BarBackground {
+    #[default]
+    None,
+    Blue,
+    Sage,
+    Lavender,
+    Sand,
+    Rose,
+    Gray,
+}
+impl BarBackground {
+    pub const OPTIONS: [(Self, &'static str); 7] = [
+        (Self::None, "Sin color"),
+        (Self::Blue, "Azul suave"),
+        (Self::Sage, "Salvia"),
+        (Self::Lavender, "Lavanda"),
+        (Self::Sand, "Arena"),
+        (Self::Rose, "Rosa suave"),
+        (Self::Gray, "Gris perla"),
+    ];
+    pub fn hex(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Blue => Some("#86ACCF"),
+            Self::Sage => Some("#95B49B"),
+            Self::Lavender => Some("#ADA0C9"),
+            Self::Sand => Some("#C5B18B"),
+            Self::Rose => Some("#C79EA8"),
+            Self::Gray => Some("#A7ADB5"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
@@ -20,6 +56,7 @@ pub struct Config {
     pub border_alpha: f64,
     pub border: bool,
     pub graph: bool,
+    pub bar_background: BarBackground,
     pub show_gpu: bool,
     pub show_memory: bool,
     pub show_tps: bool,
@@ -51,6 +88,7 @@ impl Default for Config {
             border_alpha: 0.12,
             border: false,
             graph: true,
+            bar_background: BarBackground::None,
             show_gpu: true,
             show_memory: true,
             show_tps: true,
@@ -205,6 +243,7 @@ mod tests {
     fn form_preserves_palette_and_applies_fields() {
         let original = Config {
             green: "#112233".into(),
+            bar_background: BarBackground::Lavender,
             ..Config::default()
         };
         let edited = original
@@ -219,6 +258,7 @@ mod tests {
             .unwrap();
         assert_eq!(edited.interval, 9);
         assert_eq!(edited.green, "#112233");
+        assert_eq!(edited.bar_background, BarBackground::Lavender);
         assert!(!edited.graph);
         assert!(!edited.border);
     }
@@ -251,6 +291,7 @@ mod tests {
     fn old_configs_migrate_and_bar_keeps_one_metric() {
         let old: Config = toml::from_str("border = true\nvalueChars = 4").unwrap();
         assert!(old.show_gpu && old.show_memory && old.show_tps);
+        assert_eq!(old.bar_background, BarBackground::None);
         let mut c = old;
         c.show_gpu = false;
         c.show_memory = false;
@@ -265,10 +306,13 @@ mod tests {
         let path = dir.join("config.toml");
         let c = Config {
             interval: 7,
+            bar_background: BarBackground::Sage,
             ..Config::default()
         };
         c.save(&path).unwrap();
-        assert_eq!(Config::load(&path).unwrap().interval, 7);
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.interval, 7);
+        assert_eq!(loaded.bar_background, BarBackground::Sage);
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();
     }
