@@ -1,5 +1,5 @@
 use crate::{
-    config::{BarBackground, Config},
+    config::Config,
     drawing::rect,
     model::{Sample, ServerKind},
 };
@@ -8,11 +8,14 @@ use objc2_app_kit::*;
 use objc2_foundation::*;
 use std::cell::Cell;
 
+#[path = "settings_palette.rs"]
+mod palette;
+
 pub struct Settings {
     pub window: Retained<NSWindow>,
     fields: Vec<(&'static str, Retained<NSTextField>)>,
     graph: Retained<NSButton>,
-    background: Retained<NSPopUpButton>,
+    background: Retained<palette::Palette>,
     metrics: Vec<Retained<NSButton>>,
     login: Retained<NSButton>,
     error: Retained<NSTextField>,
@@ -33,13 +36,106 @@ fn label(
     view.addSubview(&label);
     label
 }
+fn surface(view: &NSView, hex: &str, radius: f64) {
+    view.setWantsLayer(true);
+    if let Some(layer) = view.layer() {
+        layer.setBackgroundColor(Some(&crate::drawing::color(hex, 1.).CGColor()));
+        layer.setCornerRadius(radius);
+    }
+}
+fn secondary(view: &NSView, mtm: MainThreadMarker, title: &str, frame: NSRect) {
+    label(view, mtm, title, frame, 11.).setTextColor(Some(&NSColor::secondaryLabelColor()));
+}
+fn card(
+    parent: &NSView,
+    mtm: MainThreadMarker,
+    frame: NSRect,
+    title: &str,
+    hint: &str,
+) -> Retained<NSView> {
+    let view = NSView::initWithFrame(NSView::alloc(mtm), frame);
+    surface(&view, "#25282F", 12.);
+    let heading = label(
+        &view,
+        mtm,
+        title,
+        rect(20., frame.size.height - 36., frame.size.width - 40., 22.),
+        15.,
+    );
+    heading.setFont(Some(&NSFont::systemFontOfSize_weight(15., unsafe {
+        NSFontWeightSemibold
+    })));
+    if !hint.is_empty() {
+        secondary(
+            &view,
+            mtm,
+            hint,
+            rect(20., frame.size.height - 59., frame.size.width - 40., 18.),
+        );
+    }
+    parent.addSubview(&view);
+    view
+}
+fn action(
+    view: &NSView,
+    mtm: MainThreadMarker,
+    target: &AnyObject,
+    title: &str,
+    frame: NSRect,
+    selector: objc2::runtime::Sel,
+) -> Retained<NSButton> {
+    let button = unsafe {
+        NSButton::buttonWithTitle_target_action(
+            &NSString::from_str(title),
+            Some(target),
+            Some(selector),
+            mtm,
+        )
+    };
+    button.setFrame(frame);
+    button.setBezelStyle(NSBezelStyle::Push);
+    button.setFont(Some(&NSFont::systemFontOfSize(12.)));
+    view.addSubview(&button);
+    button
+}
+fn checkbox(
+    view: &NSView,
+    mtm: MainThreadMarker,
+    title: &str,
+    frame: NSRect,
+) -> Retained<NSButton> {
+    let button = unsafe {
+        NSButton::checkboxWithTitle_target_action(&NSString::from_str(title), None, None, mtm)
+    };
+    button.setFrame(frame);
+    button.setFont(Some(&NSFont::systemFontOfSize(12.)));
+    view.addSubview(&button);
+    button
+}
+fn input(
+    view: &NSView,
+    mtm: MainThreadMarker,
+    title: &str,
+    frame: NSRect,
+    numeric: bool,
+) -> Retained<NSTextField> {
+    let field = NSTextField::initWithFrame(NSTextField::alloc(mtm), frame);
+    field.setFont(Some(&NSFont::systemFontOfSize(12.)));
+    if numeric {
+        field.setAlignment(NSTextAlignment::Right);
+    }
+    field.setAccessibilityLabel(Some(&NSString::from_str(title)));
+    view.addSubview(&field);
+    field
+}
+
 impl Settings {
     pub fn new(mtm: MainThreadMarker, target: &AnyObject) -> Self {
-        // This controller retains its window and releases it itself, including after closing.
+        // This controller owns the window, even after closing it.
         let window = unsafe {
             NSWindow::initWithContentRect_styleMask_backing_defer(
                 NSWindow::alloc(mtm),
-                rect(0., 0., 590., 758.),
+                rect(0., 0., 880., 716.),
                 NSWindowStyleMask::Titled | NSWindowStyleMask::Closable,
                 NSBackingStoreType::Buffered,
                 false,
@@ -54,221 +150,200 @@ impl Settings {
         );
         window.center();
         let view = window.contentView().unwrap();
-        view.setWantsLayer(true);
-        if let Some(layer) = view.layer() {
-            layer.setBackgroundColor(Some(&crate::drawing::color("#202229", 1.).CGColor()));
-        }
-        label(
+        surface(&view, "#1B1D22", 0.);
+        let title = label(&view, mtm, "Ajustes", rect(28., 660., 300., 34.), 26.);
+        title.setFont(Some(&NSFont::systemFontOfSize_weight(26., unsafe {
+            NSFontWeightSemibold
+        })));
+        secondary(
             &view,
             mtm,
-            "Kairos Monitor",
-            rect(22., 713., 240., 28.),
-            20.,
+            "Personaliza cómo se ve y se actualiza Kairos Monitor.",
+            rect(28., 636., 550., 20.),
         );
-        let about = unsafe {
-            NSButton::buttonWithTitle_target_action(
-                ns_string!("Acerca de…"),
-                Some(target),
-                Some(sel!(about:)),
-                mtm,
-            )
-        };
-        about.setFrame(rect(280., 710., 116., 32.));
-        about.setBezelStyle(NSBezelStyle::Push);
-        view.addSubview(&about);
-        let updates = unsafe {
-            NSButton::buttonWithTitle_target_action(
-                ns_string!("Actualizaciones…"),
-                Some(target),
-                Some(sel!(updates:)),
-                mtm,
-            )
-        };
-        updates.setFrame(rect(400., 710., 168., 32.));
-        updates.setBezelStyle(NSBezelStyle::Push);
-        view.addSubview(&updates);
-        let hint = label(
+        action(
             &view,
             mtm,
-            concat!(
-                "Versión ",
-                env!("CARGO_PKG_VERSION"),
-                " · Los cambios se aplican al guardar."
-            ),
-            rect(22., 689., 530., 20.),
-            12.,
+            target,
+            "Acerca de…",
+            rect(596., 664., 108., 28.),
+            sel!(about:),
         );
-        hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
+        action(
+            &view,
+            mtm,
+            target,
+            "Actualizaciones…",
+            rect(714., 664., 142., 28.),
+            sel!(updates:),
+        );
+
+        let connection = card(
+            &view,
+            mtm,
+            rect(24., 374., 404., 244.),
+            "Conexión",
+            "Tu servidor y sus modelos, detectados automáticamente.",
+        );
         let mut fields = Vec::new();
-        for (key, title, y) in [
-            ("url", "URL del servidor", 654.),
-            ("dashboard", "Dashboard", 619.),
+        for (key, title, y, width) in [
+            ("url", "URL del servidor", 134., 364.),
+            ("dashboard", "Dashboard", 76., 364.),
         ] {
-            label(&view, mtm, title, rect(22., y + 2., 146., 22.), 12.);
-            let field = NSTextField::initWithFrame(
-                NSTextField::alloc(mtm),
-                rect(175., y, if key == "url" { 280. } else { 391. }, 24.),
-            );
-            field.setFont(Some(&NSFont::systemFontOfSize(12.)));
-            field.setAccessibilityLabel(Some(&NSString::from_str(title)));
-            view.addSubview(&field);
-            fields.push((key, field));
+            label(&connection, mtm, title, rect(20., y + 28., 364., 18.), 11.);
+            fields.push((
+                key,
+                input(&connection, mtm, title, rect(20., y, width, 26.), false),
+            ));
         }
-        let test_button = unsafe {
-            NSButton::buttonWithTitle_target_action(
-                ns_string!("Probar conexión"),
-                Some(target),
-                Some(sel!(testConnection:)),
-                mtm,
-            )
-        };
-        test_button.setFrame(rect(462., 651., 104., 30.));
-        test_button.setFont(Some(&NSFont::systemFontOfSize(11.)));
-        view.addSubview(&test_button);
-        label(
-            &view,
+        let test_button = action(
+            &connection,
             mtm,
-            "Modelos detectados",
-            rect(22., 586., 146., 22.),
-            12.,
+            target,
+            "Probar conexión",
+            rect(20., 38., 132., 30.),
+            sel!(testConnection:),
         );
         let models = NSTextField::wrappingLabelWithString(
             ns_string!("Detección automática al conectar."),
             mtm,
         );
-        models.setFrame(rect(175., 566., 391., 44.));
+        models.setFrame(rect(166., 10., 218., 36.));
         models.setFont(Some(&NSFont::systemFontOfSize(11.)));
         models.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        view.addSubview(&models);
-        for (title, y) in [("ACTUALIZACIÓN", 546.), ("UMBRALES DE AVISO", 428.)] {
-            let title = label(&view, mtm, title, rect(22., y, 540., 18.), 10.);
-            title.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        }
+        connection.addSubview(&models);
+        secondary(&connection, mtm, "Modelos", rect(166., 48., 218., 18.));
+
+        let refresh = card(&view, mtm, rect(24., 202., 404., 156.), "Actualización", "");
         for (key, title, x, y) in [
-            ("interval", "Panel cerrado (s)", 22., 510.),
-            ("openInterval", "Panel abierto (s)", 312., 510.),
-            ("timeout", "Tiempo de espera (s)", 22., 472.),
-            ("history", "Lecturas del gráfico", 312., 472.),
-            ("memWarn", "RAM aviso (%)", 22., 394.),
-            ("memDanger", "RAM crítico (%)", 312., 394.),
-            ("gpuWarn", "GPU aviso (%)", 22., 356.),
-            ("gpuDanger", "GPU crítico (%)", 312., 356.),
-            ("tempWarn", "GPU aviso (°C)", 22., 318.),
-            ("tempDanger", "GPU crítico (°C)", 312., 318.),
+            ("interval", "Panel cerrado · s", 20., 70.),
+            ("openInterval", "Panel abierto · s", 212., 70.),
+            ("timeout", "Espera máxima · s", 20., 18.),
+            ("history", "Lecturas del gráfico", 212., 18.),
         ] {
-            label(&view, mtm, title, rect(x, y + 2., 165., 22.), 12.);
-            let field =
-                NSTextField::initWithFrame(NSTextField::alloc(mtm), rect(x + 175., y, 79., 24.));
-            field.setFont(Some(&NSFont::monospacedDigitSystemFontOfSize_weight(
-                12.,
-                unsafe { NSFontWeightRegular },
-            )));
-            field.setAlignment(NSTextAlignment::Right);
-            field.setAccessibilityLabel(Some(&NSString::from_str(title)));
-            view.addSubview(&field);
-            fields.push((key, field));
+            label(&refresh, mtm, title, rect(x, y + 27., 174., 16.), 11.);
+            fields.push((
+                key,
+                input(&refresh, mtm, title, rect(x, y, 172., 24.), true),
+            ));
         }
-        let graph = unsafe {
-            NSButton::checkboxWithTitle_target_action(
-                ns_string!("Mostrar gráfico de tokens/s"),
-                None,
-                None,
-                mtm,
-            )
-        };
-        graph.setFrame(rect(22., 273., 282., 24.));
-        view.addSubview(&graph);
-        let heading = label(
+        let startup = card(
             &view,
             mtm,
-            "BARRA DE MENÚS",
-            rect(22., 238., 540., 18.),
-            10.,
+            rect(24., 82., 404., 104.),
+            "Al iniciar el Mac",
+            "",
         );
-        heading.setTextColor(Some(&NSColor::secondaryLabelColor()));
-        let mut metrics = Vec::new();
-        for (title, x) in [("GPU (%)", 22.), ("RAM (GiB)", 202.), ("Tokens/s", 382.)] {
-            let checkbox = unsafe {
-                NSButton::checkboxWithTitle_target_action(
-                    &NSString::from_str(title),
-                    None,
-                    None,
-                    mtm,
-                )
-            };
-            checkbox.setFrame(rect(x, 207., 170., 24.));
-            view.addSubview(&checkbox);
-            metrics.push(checkbox);
-        }
-        label(
-            &view,
+        let login = checkbox(
+            &startup,
             mtm,
-            "Fondo de color",
-            rect(22., 165., 146., 22.),
-            12.,
+            "Abrir al iniciar sesión",
+            rect(20., 40., 364., 24.),
         );
-        let background = NSPopUpButton::initWithFrame_pullsDown(
-            NSPopUpButton::alloc(mtm),
-            rect(175., 160., 215., 28.),
-            false,
-        );
-        for (_, title) in BarBackground::OPTIONS {
-            background.addItemWithTitle(&NSString::from_str(title));
-        }
-        background.setAccessibilityLabel(Some(ns_string!("Fondo de color")));
-        background.setToolTip(Some(ns_string!(
-            "Tono suave para distinguir el widget en la barra de menús."
-        )));
-        view.addSubview(&background);
-        let login = unsafe {
-            NSButton::checkboxWithTitle_target_action(
-                ns_string!("Abrir al iniciar sesión"),
-                None,
-                None,
-                mtm,
-            )
-        };
-        login.setFrame(rect(22., 117., 540., 24.));
-        view.addSubview(&login);
-        let hint = label(
-            &view,
+        secondary(
+            &startup,
             mtm,
             if crate::login::available() {
-                "Se abrirá en la barra de menús, sin ventanas ni icono en el Dock."
+                "En la barra de menús, sin abrir ventanas."
             } else {
-                "Para activar el inicio de sesión, copia la app a Aplicaciones."
+                "Disponible al instalar la app en Aplicaciones."
             },
-            rect(42., 91., 524., 20.),
-            11.,
+            rect(20., 14., 364., 20.),
         );
-        hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
+
+        let appearance = card(
+            &view,
+            mtm,
+            rect(444., 304., 412., 314.),
+            "Apariencia",
+            "Elige qué ver y dale un toque de color a la barra.",
+        );
+        let mut metrics = Vec::new();
+        for (title, x) in [("GPU (%)", 20.), ("RAM (GiB)", 142.), ("Tokens/s", 274.)] {
+            metrics.push(checkbox(&appearance, mtm, title, rect(x, 226., 118., 24.)));
+        }
+        label(
+            &appearance,
+            mtm,
+            "Fondo de color",
+            rect(20., 200., 364., 20.),
+            12.,
+        );
+        let background = palette::Palette::new(mtm, &appearance);
+        secondary(&appearance, mtm, "Claro", rect(20., 116., 174., 16.));
+        secondary(&appearance, mtm, "Oscuro", rect(206., 116., 174., 16.));
+        secondary(
+            &appearance,
+            mtm,
+            "Vista previa · valores de ejemplo",
+            rect(20., 52., 364., 18.),
+        );
+        let graph = checkbox(
+            &appearance,
+            mtm,
+            "Mostrar gráfico de tokens/s en el panel",
+            rect(20., 16., 370., 24.),
+        );
+
+        let alerts = card(
+            &view,
+            mtm,
+            rect(444., 82., 412., 206.),
+            "Avisos",
+            "Solo cambia de color la cifra afectada.",
+        );
+        secondary(&alerts, mtm, "Métrica", rect(20., 118., 156., 18.));
+        let warn = label(&alerts, mtm, "Aviso", rect(196., 118., 84., 18.), 11.);
+        warn.setTextColor(Some(&crate::drawing::soft_alert_color(
+            crate::model::AlertLevel::Warning,
+            true,
+        )));
+        let critical = label(&alerts, mtm, "Crítico", rect(300., 118., 84., 18.), 11.);
+        critical.setTextColor(Some(&crate::drawing::soft_alert_color(
+            crate::model::AlertLevel::Critical,
+            true,
+        )));
+        for (title, warn, danger, y) in [
+            ("Uso de GPU · %", "gpuWarn", "gpuDanger", 82.),
+            ("Memoria RAM · %", "memWarn", "memDanger", 48.),
+            ("Temperatura GPU · °C", "tempWarn", "tempDanger", 14.),
+        ] {
+            label(&alerts, mtm, title, rect(20., y + 3., 172., 20.), 12.);
+            for (key, suffix, x) in [(warn, "aviso", 196.), (danger, "crítico", 300.)] {
+                fields.push((
+                    key,
+                    input(
+                        &alerts,
+                        mtm,
+                        &format!("{title}: {suffix}"),
+                        rect(x, y, 84., 26.),
+                        true,
+                    ),
+                ));
+            }
+        }
         let error = NSTextField::wrappingLabelWithString(ns_string!(""), mtm);
-        error.setFrame(rect(22., 53., 544., 32.));
+        error.setFrame(rect(170., 39., 420., 36.));
         error.setTextColor(Some(&NSColor::systemRedColor()));
         error.setFont(Some(&NSFont::systemFontOfSize(11.)));
         view.addSubview(&error);
-        for (title, x, w, action, key) in [
-            ("Restablecer", 22., 116., sel!(resetSettings:), ""),
-            ("Cancelar", 358., 96., sel!(cancelSettings:), "\u{1b}"),
-            ("Guardar", 466., 100., sel!(saveSettings:), "\r"),
+        secondary(
+            &view,
+            mtm,
+            concat!(
+                "Kairos Monitor ",
+                env!("CARGO_PKG_VERSION"),
+                " · Se aplica al guardar"
+            ),
+            rect(170., 14., 420., 18.),
+        );
+        for (title, x, w, selector, key) in [
+            ("Restablecer", 24., 124., sel!(resetSettings:), ""),
+            ("Cancelar", 634., 100., sel!(cancelSettings:), "\u{1b}"),
+            ("Guardar", 746., 110., sel!(saveSettings:), "\r"),
         ] {
-            let button = unsafe {
-                NSButton::buttonWithTitle_target_action(
-                    &NSString::from_str(title),
-                    Some(target),
-                    Some(action),
-                    mtm,
-                )
-            };
-            button.setFrame(rect(x, 20., w, 30.));
-            button.setBezelStyle(NSBezelStyle::Push);
+            let button = action(&view, mtm, target, title, rect(x, 24., w, 32.), selector);
             button.setKeyEquivalent(&NSString::from_str(key));
-            view.addSubview(&button);
-        }
-        for pair in fields.windows(2) {
-            unsafe {
-                pair[0].1.setNextKeyView(Some(&pair[1].1));
-            }
         }
         Self {
             window,
@@ -293,12 +368,7 @@ impl Settings {
             };
             field.setStringValue(&NSString::from_str(&text));
         }
-        self.background.selectItemAtIndex(
-            BarBackground::OPTIONS
-                .iter()
-                .position(|(value, _)| *value == c.bar_background)
-                .unwrap_or(0) as isize,
-        );
+        self.background.select(c.bar_background);
         self.graph.setState(if c.graph {
             NSControlStateValueOn
         } else {
@@ -342,8 +412,7 @@ impl Settings {
             .collect::<Vec<_>>();
         let mut base = base.clone();
         base.service = "auto".into();
-        base.bar_background =
-            BarBackground::OPTIONS[self.background.indexOfSelectedItem().max(0) as usize].0;
+        base.bar_background = self.background.selected();
         base.show_gpu = self.metrics[0].state() == NSControlStateValueOn;
         base.show_memory = self.metrics[1].state() == NSControlStateValueOn;
         base.show_tps = self.metrics[2].state() == NSControlStateValueOn;
@@ -445,6 +514,16 @@ pub fn snapshot(config: &Config, path: &str) {
     let target = NSObject::new();
     let settings = Settings::new(mtm, &target);
     settings.populate(config);
+    settings.background.verify_actions();
+    let edited = settings
+        .read(config)
+        .expect("The populated form must remain valid");
+    assert_eq!(edited.bar_background, crate::config::BarBackground::Gray);
+    settings.populate(config);
+    assert_eq!(
+        settings.read(config).unwrap().bar_background,
+        config.bar_background
+    );
     let view = settings.window.contentView().unwrap();
     #[allow(deprecated)]
     unsafe {

@@ -1,5 +1,11 @@
 # Cambios
 
+## 0.4.4
+
+- Ajustes rediseñados en dos columnas, con secciones de conexión, apariencia, actualización, inicio y avisos.
+- Paleta de colores visible con selección marcada y vista previa inmediata en apariencia clara y oscura.
+- Las vistas previas usan valores de ejemplo; los cambios solo se aplican al guardar.
+
 ## 0.4.3
 
 - Ajuste «Fondo de color» para la barra de menús: azul suave, salvia, lavanda, arena, rosa suave y gris perla, o sin color.

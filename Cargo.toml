@@ -1,6 +1,6 @@
 [package]
 name = "kairosmonitor"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 description = "Kairos telemetry in the macOS menu bar"
 

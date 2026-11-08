@@ -6,7 +6,7 @@ Monitor nativo para la barra de menús de macOS, escrito en Rust y AppKit. Telem
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.4.3 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.3/KairosMonitor-0.4.3-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.4.4 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.4/KairosMonitor-0.4.4-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -42,7 +42,7 @@ Esta versión no tiene campo para clave API: los endpoints que requieren autoriz
 - GPU, RAM y tokens/s se pueden mostrar por separado desde Ajustes; debe quedar al menos una métrica visible en el modo Kairos.
 - **Ancho fijo y compacto** para las métricas elegidas, cifras alineadas a la derecha y márgenes exteriores de 4 puntos. Cambiar cifras, entrar en aviso o perder la conexión no desplaza los demás widgets. Cambiar las métricas visibles o el tipo de servidor sí cambia el espacio necesario.
 - Las cifras grandes se abrevian (`1.2k`, `12M`; memoria en `G`, `T`, `P`, `E`). La barra conserva el resaltado nativo, sin marcos laterales superpuestos.
-- **Fondo de color**, en Ajustes → Barra de menús: sin color (predeterminado), azul suave, salvia, lavanda, arena, rosa suave o gris perla. Los tonos translúcidos distinguen el widget con discreción y se aplican al guardar.
+- **Fondo de color**, en Ajustes → Apariencia: sin color (predeterminado), azul suave, salvia, lavanda, arena, rosa suave o gris perla. La paleta muestra los tonos y marca el elegido; la vista previa clara y oscura usa valores de ejemplo y cambia al pulsar un color. Los tonos translúcidos distinguen el widget con discreción y se aplican al guardar.
 - **Solo la cifra afectada** cambia de color: ocre suave para aviso y rojo apagado para crítico, adaptados a apariencia clara y oscura. Los iconos, separadores y demás cifras mantienen el color nativo. Al pasar el puntero se explica el motivo.
 
 | Aviso configurable | Aviso inicial | Crítico inicial |
@@ -65,7 +65,7 @@ La cifra de GPU avisa por uso o temperatura, tomando el nivel más alto. La RAM 
 
 La frecuencia predeterminada es 5 s con el panel cerrado y 2 s abierto; puedes aumentar los intervalos para consultar menos. El consumo real depende del servidor, del intervalo y de si el panel está abierto.
 
-**Ajustes** permite modificar conexión, intervalos, timeout, historial, umbrales, gráfico, métricas visibles e inicio de sesión. Los cambios se aplican al guardar sin reiniciar. Las configuraciones anteriores se conservan: `service` se acepta por compatibilidad, pero el servicio se detecta automáticamente. Los antiguos campos `border`, `fillAlpha`, `borderAlpha` y `valueChars` no controlan el dibujo ni el ancho actual.
+**Ajustes** organiza las preferencias en dos columnas, con secciones de Conexión, Apariencia, Actualización, Al iniciar el Mac y Avisos. Permite modificar conexión, intervalos, timeout, historial, umbrales, gráfico, métricas visibles e inicio de sesión. Los cambios se aplican al guardar sin reiniciar. Las configuraciones anteriores se conservan: `service` se acepta por compatibilidad, pero el servicio se detecta automáticamente. Los antiguos campos `border`, `fillAlpha`, `borderAlpha` y `valueChars` no controlan el dibujo ni el ancho actual.
 
 Configuración: `~/Library/Application Support/KairosMonitor/config.toml`. Editarla a mano requiere reiniciar. El inicio de sesión pertenece a cada Mac y se gestiona mediante `~/Library/LaunchAgents/es.amartin.kairosmonitor.login.plist`. El lanzador se registra y se comprueba al guardar; solo vive unos instantes al iniciar sesión. Abre la app mediante LaunchServices y evita duplicados. Desactivarlo no cierra la app. Los registros antiguos se migran sin perder la preferencia; una actualización repara el registro si estaba activado. La app debe estar en `/Applications` o `~/Applications` para activarlo. No utiliza `KeepAlive`: **Salir** mantiene la app cerrada hasta abrirla de nuevo o iniciar otra sesión.
 
