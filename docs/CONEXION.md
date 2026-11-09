@@ -6,6 +6,12 @@ Introduce la URL base (`http://kairos:8787`) o la URL completa de métricas (`ht
 
 Se excluyen servicios detenidos y alias que apuntan a otro servicio, y se eliminan duplicados. El rendimiento mostrado corresponde al servicio asociado por Kairos a `vllmThroughput`, no a una suma inventada de todos los modelos.
 
+## Uso semanal de GPT / Codex
+
+Para un endpoint que termine en `/api/metrics`, se consulta también `/api/chatgpt/usage-limits` conservando el mismo origen y prefijo. La fuente es la de Kairos Dash: `weeklyUsage` o la ventana semanal más próxima a 10080 minutos en `rateLimits`. `weeklyPace` aporta los días y el inicio/reinicio del ciclo para calcular el presupuesto proporcional exacto. Sin serie semanal se conserva el porcentaje oficial y se indica que no hay serie.
+
+El porcentaje representa uso semanal, no GPU ni tokens de los modelos locales. Las lecturas auxiliares tienen una caché en memoria de 15 segundos, incluso cuando fallan, y usan el mismo trabajador y los límites HTTP existentes. Un error de esta fuente no convierte la telemetría de hardware en un fallo. La sesión de Codex se mantiene en Kairos; el monitor no lee credenciales ni ejecuta `codex login`.
+
 ## Servidores compatibles con OpenAI
 
 Utiliza la URL base, `/v1` o el endpoint completo `/v1/models`. Por ejemplo, `http://servidor:8000/v1`. Una ruta como `https://servidor/proxy/v1` conserva el prefijo y consulta `https://servidor/proxy/v1/models`.

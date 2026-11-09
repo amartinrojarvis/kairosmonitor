@@ -37,6 +37,35 @@ impl BarBackground {
     }
 }
 
+/// Stable identifiers keep stored ordering independent of localized labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BarMetric {
+    Gpu,
+    Memory,
+    Tps,
+    Gpt,
+}
+impl BarMetric {
+    pub const ALL: [Self; 4] = [Self::Gpu, Self::Memory, Self::Tps, Self::Gpt];
+    pub fn index(self) -> usize {
+        match self {
+            Self::Gpu => 0,
+            Self::Memory => 1,
+            Self::Tps => 2,
+            Self::Gpt => 3,
+        }
+    }
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Gpu => "GPU (%)",
+            Self::Memory => "RAM (GiB)",
+            Self::Tps => "Tokens/s",
+            Self::Gpt => "GPT (%)",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct Config {
@@ -60,6 +89,8 @@ pub struct Config {
     pub show_gpu: bool,
     pub show_memory: bool,
     pub show_tps: bool,
+    pub show_gpt: bool,
+    pub bar_order: [BarMetric; 4],
     pub history: usize,
     pub value_chars: usize,
     pub background: String,
@@ -92,6 +123,8 @@ impl Default for Config {
             show_gpu: true,
             show_memory: true,
             show_tps: true,
+            show_gpt: true,
+            bar_order: BarMetric::ALL,
             history: 44,
             value_chars: 4,
             background: "#202229".into(),
@@ -120,8 +153,11 @@ impl Config {
     }
     pub fn validate(&self) -> Result<(), String> {
         let c = self;
-        if !c.show_gpu && !c.show_memory && !c.show_tps {
+        if !c.show_gpu && !c.show_memory && !c.show_tps && !c.show_gpt {
             return Err("Selecciona al menos una métrica para la barra".into());
+        }
+        if BarMetric::ALL.iter().any(|m| !c.bar_order.contains(m)) {
+            return Err("El orden debe contener GPU, RAM, tokens/s y GPT una sola vez".into());
         }
         for url in [&c.url, &c.dashboard] {
             let valid = url
@@ -290,15 +326,37 @@ mod tests {
     #[test]
     fn old_configs_migrate_and_bar_keeps_one_metric() {
         let old: Config = toml::from_str("border = true\nvalueChars = 4").unwrap();
-        assert!(old.show_gpu && old.show_memory && old.show_tps);
+        assert!(old.show_gpu && old.show_memory && old.show_tps && old.show_gpt);
         assert_eq!(old.bar_background, BarBackground::None);
         let mut c = old;
         c.show_gpu = false;
         c.show_memory = false;
         c.show_tps = false;
+        c.show_gpt = false;
         assert!(c.validate().is_err());
         c.show_tps = true;
         assert!(c.validate().is_ok());
+    }
+    #[test]
+    fn bar_order_migrates_validates_and_survives_edits() {
+        let old: Config = toml::from_str("showGpu = false").unwrap();
+        assert_eq!(old.bar_order, BarMetric::ALL);
+        let custom: Config =
+            toml::from_str(r#"barOrder = ["gpt", "tps", "memory", "gpu"]"#).unwrap();
+        custom.validate().unwrap();
+        let edited = custom
+            .edited(&[("interval".into(), "9".into())], false, false)
+            .unwrap();
+        assert_eq!(edited.bar_order, custom.bar_order);
+        let restored: Config = toml::from_str(&toml::to_string(&edited).unwrap()).unwrap();
+        assert_eq!(restored.bar_order, custom.bar_order);
+        let mut duplicate = custom;
+        duplicate.bar_order[0] = BarMetric::Gpu;
+        assert!(duplicate.validate().is_err());
+        assert!(toml::from_str::<Config>(r#"barOrder = ["gpu", "memory"]"#).is_err());
+        assert!(
+            toml::from_str::<Config>(r#"barOrder = ["gpu", "memory", "tps", "other"]"#).is_err()
+        );
     }
     #[test]
     fn save_roundtrip() {

@@ -16,6 +16,9 @@ graph = true
 showGpu = true
 showMemory = true
 showTps = true
+showGpt = true
+# Orden de izquierda a derecha (también editable con flechas en Ajustes).
+barOrder = ["gpu", "memory", "tps", "gpt"]
 # Fondo suave de la barra: none, blue, sage, lavender, sand, rose o gray.
 barBackground = "none"
 history = 44

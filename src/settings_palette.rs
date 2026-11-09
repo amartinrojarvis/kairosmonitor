@@ -1,6 +1,6 @@
 //! Native palette buttons and an event-driven preview; no timers or image assets.
 use crate::{
-    config::BarBackground,
+    config::{BarBackground, BarMetric},
     drawing::{self, rect},
 };
 use objc2::{AnyThread, DefinedClass, MainThreadOnly, define_class, msg_send, rc::Retained, sel};
@@ -10,6 +10,8 @@ use std::cell::Cell;
 
 pub struct PreviewIvars {
     selected: Cell<BarBackground>,
+    order: Cell<[BarMetric; 4]>,
+    enabled: Cell<[bool; 4]>,
 }
 define_class!(
     #[unsafe(super = NSView)]
@@ -26,7 +28,10 @@ define_class!(
                 if let Some(hex) = self.ivars().selected.get().hex() {
                     drawing::fill(bounds, &drawing::color(hex, 0.24), 7.);
                 }
-                drawing::text("42% · 24G · 128/s", rect(x + 12., 13., 154., 20.), 11.,
+                let values = ["42%", "24G", "128/s", "✦38%"];
+                let example = self.ivars().order.get().iter().filter(|m| self.ivars().enabled.get()[m.index()])
+                    .map(|m| values[m.index()]).collect::<Vec<_>>().join("  ");
+                drawing::text(&example, rect(x + 8., 13., 158., 20.), 10.,
                     &drawing::color(if dark { "#F2F3F7" } else { "#272A30" }, 1.));
             }
         }
@@ -36,6 +41,8 @@ impl PalettePreview {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(PreviewIvars {
             selected: Cell::new(BarBackground::None),
+            order: Cell::new(BarMetric::ALL),
+            enabled: Cell::new([true; 4]),
         });
         let this: Retained<Self> =
             unsafe { msg_send![super(this), initWithFrame: rect(0., 0., 360., 48.)] };
@@ -94,7 +101,7 @@ fn swatch(value: BarBackground, selected: bool) -> Retained<NSImage> {
 impl Palette {
     pub fn new(mtm: MainThreadMarker, view: &NSView) -> Retained<Self> {
         let preview = PalettePreview::new(mtm);
-        preview.setFrameOrigin(NSPoint::new(20., 72.));
+        preview.setFrameOrigin(NSPoint::new(20., 52.));
         view.addSubview(&preview);
         let mut buttons = Vec::new();
         let mut swatches = Vec::new();
@@ -119,7 +126,7 @@ impl Palette {
                     mtm,
                 )
             };
-            button.setFrame(rect(17. + index as f64 * 52., 132., 52., 64.));
+            button.setFrame(rect(17. + index as f64 * 52., 112., 52., 64.));
             button.setButtonType(NSButtonType::PushOnPushOff);
             button.setBordered(false);
             button.setFont(Some(&NSFont::systemFontOfSize(10.)));
@@ -146,6 +153,12 @@ impl Palette {
         }
         this.select(BarBackground::None);
         this
+    }
+    pub fn set_metrics(&self, order: [BarMetric; 4], enabled: [bool; 4]) {
+        let preview = &self.ivars().preview;
+        preview.ivars().order.set(order);
+        preview.ivars().enabled.set(enabled);
+        preview.setNeedsDisplay(true);
     }
     /// Exercise the same target/action path as mouse and keyboard input in snapshot QA.
     pub fn verify_actions(&self) {

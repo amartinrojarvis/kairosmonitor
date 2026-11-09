@@ -1,0 +1,74 @@
+{
+  "ok": true,
+  "weeklyUsage": {
+    "usedPercent": 92,
+    "remainingPercent": 8,
+    "windowDurationMins": 10080,
+    "resetsAt": 1794612001,
+    "resetsAtIso": "2026-11-13T23:20:01.000Z",
+    "sourceField": "primary"
+  },
+  "weeklyPace": {
+    "cycleStartIso": "2026-11-06T23:20:01.000Z",
+    "resetIso": "2026-11-13T23:20:01.000Z",
+    "currentUsedPercent": 92,
+    "days": [
+      {
+        "localDate": "2026-11-07",
+        "weekday": "sá",
+        "isToday": false,
+        "isFuture": false,
+        "expectedPercent": 14.1,
+        "actualPercent": 68
+      },
+      {
+        "localDate": "2026-11-08",
+        "weekday": "do",
+        "isToday": false,
+        "isFuture": false,
+        "expectedPercent": 28.4,
+        "actualPercent": 91
+      },
+      {
+        "localDate": "2026-11-09",
+        "weekday": "lu",
+        "isToday": true,
+        "isFuture": false,
+        "expectedPercent": 42.7,
+        "actualPercent": 92
+      },
+      {
+        "localDate": "2026-11-10",
+        "weekday": "ma",
+        "isToday": false,
+        "isFuture": true,
+        "expectedPercent": 56.9,
+        "actualPercent": null
+      },
+      {
+        "localDate": "2026-11-11",
+        "weekday": "mi",
+        "isToday": false,
+        "isFuture": true,
+        "expectedPercent": 71.2,
+        "actualPercent": null
+      },
+      {
+        "localDate": "2026-11-12",
+        "weekday": "ju",
+        "isToday": false,
+        "isFuture": true,
+        "expectedPercent": 85.5,
+        "actualPercent": null
+      },
+      {
+        "localDate": "2026-11-13",
+        "weekday": "vi",
+        "isToday": false,
+        "isFuture": true,
+        "expectedPercent": 99.8,
+        "actualPercent": null
+      }
+    ]
+  }
+}

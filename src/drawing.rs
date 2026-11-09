@@ -6,7 +6,7 @@ use objc2_foundation::*;
 
 pub const WIDTH: f64 = 660.;
 pub fn height(c: &Config) -> f64 {
-    if c.graph { 488. } else { 412. }
+    if c.graph { 668. } else { 592. }
 }
 pub const FOOTER_HEIGHT: f64 = 50.;
 pub const FOOTER_BUTTON_HEIGHT: f64 = 30.;
@@ -383,6 +383,181 @@ pub fn panel(state: &State) {
             );
         }
     }
+    gpt_panel(state);
+}
+fn gpt_panel(state: &State) {
+    let c = &state.config;
+    let offset = if c.graph { 76. } else { 0. };
+    let section_rect = |x, y, w, h| rect(x, y + offset, w, h);
+    let data = state
+        .sample
+        .as_ref()
+        .map(Sample::usage)
+        .unwrap_or(&serde_json::Value::Null);
+    let used = crate::usage::used(data);
+    let accent = color("#E6A66C", 1.);
+    let real_color = tone(used, 70., 90., c);
+    fill(
+        section_rect(20., 360., 620., 176.),
+        &color(&c.foreground, 0.035),
+        8.,
+    );
+    label(
+        "ChatGPT / Codex · límite semanal oficial",
+        32.,
+        370. + offset,
+        420.,
+        c,
+    );
+    text(
+        &percent(used),
+        section_rect(540., 366., 88., 26.),
+        20.,
+        &real_color,
+    );
+    if used < 0. {
+        text(
+            crate::usage::reason(data),
+            section_rect(32., 408., 596., 20.),
+            12.,
+            &color(&c.muted, 1.),
+        );
+        text(
+            "Consulta Uso en Kairos Dash para revisar la fuente.",
+            section_rect(32., 440., 596., 20.),
+            11.,
+            &color(&c.muted, 1.),
+        );
+        return;
+    }
+    let weekly = crate::usage::weekly(data).unwrap();
+    let reset = crate::usage::epoch(&data["weeklyPace"]["resetIso"])
+        .or_else(|| crate::usage::epoch(&weekly["resetsAtIso"]))
+        .or_else(|| weekly["resetsAt"].as_f64());
+    let reset_text = reset
+        .map(|epoch| {
+            let formatter = NSDateFormatter::new();
+            formatter.setDateFormat(Some(ns_string!("dd/MM HH:mm")));
+            let date = NSDate::dateWithTimeIntervalSince1970(epoch);
+            let hours = ((epoch - crate::usage::now()) / 3600.).max(0.) as u64;
+            format!(
+                "Reinicio {} · quedan {}d {}h · {} libre",
+                formatter.stringFromDate(&date),
+                hours / 24,
+                hours % 24,
+                percent(100. - used)
+            )
+        })
+        .unwrap_or_else(|| format!("{} libre · reinicio no disponible", percent(100. - used)));
+    text(
+        &reset_text,
+        section_rect(32., 395., 596., 17.),
+        10.,
+        &color(&c.muted, 1.),
+    );
+    let Some(pace) = crate::usage::pace(data, crate::usage::now()) else {
+        text(
+            "Sin serie semanal",
+            section_rect(32., 430., 596., 20.),
+            12.,
+            &color(&c.muted, 1.),
+        );
+        return;
+    };
+    let delta = pace.real - pace.limit;
+    let verdict = if delta > 2. {
+        "por encima del ritmo"
+    } else if delta > 0. {
+        "ligeramente por encima"
+    } else if delta < -2. {
+        "bajo control"
+    } else {
+        "en ritmo"
+    };
+    text(
+        &format!("Ritmo semanal · {verdict}"),
+        section_rect(32., 419., 596., 17.),
+        11.,
+        &color(&c.foreground, 1.),
+    );
+    let x = 32.;
+    let y = 452.;
+    let w = 596.;
+    fill(section_rect(x, y, w, 22.), &color(&c.foreground, 0.08), 3.);
+    fill(
+        section_rect(x, y, w * pace.real / 100., 22.),
+        &real_color.colorWithAlphaComponent(0.4),
+        3.,
+    );
+    fill(
+        section_rect(
+            x + w * pace.real.min(pace.limit) / 100.,
+            y,
+            w * delta.abs() / 100.,
+            22.,
+        ),
+        &color(if delta > 0. { &c.red } else { &c.green }, 0.18),
+        0.,
+    );
+    let mut begin = 0.;
+    for (i, day) in pace.days.iter().take(8).enumerate() {
+        let end = number(&day["expectedPercent"]).clamp(0., 100.);
+        if end > 0. && i + 1 < pace.days.len() {
+            fill(
+                section_rect(x + w * end / 100., y, 1., 22.),
+                &color(&c.foreground, 0.25),
+                0.,
+            );
+        }
+        let midpoint = ((begin + end) / 2.).clamp(4., 96.);
+        let weekday = day["weekday"].as_str().unwrap_or("");
+        text(
+            &format!("D{} · {weekday}", i + 1),
+            section_rect(x + w * midpoint / 100. - 25., 480., 55., 16.),
+            9.,
+            &color(
+                if day["isToday"] == true {
+                    &c.foreground
+                } else {
+                    &c.muted
+                },
+                1.,
+            ),
+        );
+        begin = end;
+    }
+    for (value, ink) in [(pace.limit, &*accent), (pace.real, &*real_color)] {
+        fill(
+            section_rect(x + (w - 2.) * value / 100., y - 3., 2., 28.),
+            ink,
+            0.,
+        );
+    }
+    // Separate label rows keep nearby real/limit markers readable at every percentage.
+    text(
+        &format!("límite {}", crate::usage::percentage(pace.limit)),
+        section_rect(x, 436., 240., 16.),
+        10.,
+        &accent,
+    );
+    text(
+        &format!("real {}", crate::usage::percentage(pace.real)),
+        section_rect(428., 436., 200., 16.),
+        10.,
+        &real_color,
+    );
+    text(
+        &format!(
+            "Real {} · proporcional {} · {} {:.1} pts",
+            crate::usage::percentage(pace.real),
+            crate::usage::percentage(pace.limit),
+            if delta > 0. { "exceso" } else { "margen" },
+            delta.abs()
+        ),
+        section_rect(x, 503., w, 18.),
+        11.,
+        &color(&c.foreground, 1.),
+    );
 }
 fn catalog_panel(state: &State) {
     let c = &state.config;
@@ -503,7 +678,7 @@ pub fn alert_values(values: &[AlertValue], dark: bool, offset: NSPoint) {
         text(
             &value.value,
             frame,
-            11.,
+            10.,
             &soft_alert_color(value.level, dark),
         );
     }
@@ -520,41 +695,60 @@ pub fn bar(state: &State) -> BarArtwork {
                 .unwrap_or_else(|| "— modelos".into()),
             String::new(),
             String::new(),
+            String::new(),
         ]
     } else {
-        state
-            .sample
-            .as_ref()
-            .map(Sample::bar)
-            .unwrap_or(["—".into(), "—".into(), "—".into()])
+        let b =
+            state
+                .sample
+                .as_ref()
+                .map(Sample::bar)
+                .unwrap_or(["—".into(), "—".into(), "—".into()]);
+        [
+            b[0].clone(),
+            b[1].clone(),
+            b[2].clone(),
+            state
+                .sample
+                .as_ref()
+                .map(|s| percent(crate::usage::used(s.usage())))
+                .unwrap_or_else(|| "—".into()),
+        ]
     };
-    let levels = state
+    let base_levels = state
         .sample
         .as_ref()
         .map(|s| s.bar_alerts(c))
         .unwrap_or([AlertLevel::Normal; 3]);
+    let gpt_level = state
+        .sample
+        .as_ref()
+        .map(|s| AlertLevel::for_value(crate::usage::used(s.usage()), 70., 90.))
+        .unwrap_or(AlertLevel::Normal);
+    let levels = [base_levels[0], base_levels[1], base_levels[2], gpt_level];
     let enabled = if catalog {
-        [true, false, false]
+        [true, false, false, false]
     } else {
-        [c.show_gpu, c.show_memory, c.show_tps]
+        [c.show_gpu, c.show_memory, c.show_tps, c.show_gpt]
     };
     let names = if catalog {
-        ["cube", "", ""]
+        ["cube", "", "", ""]
     } else {
-        ["cpu", "memorychip", "bolt.fill"]
+        ["cpu", "memorychip", "bolt.fill", "sparkle"]
     };
     let capacities = if catalog {
-        ["9999 modelos", "", ""]
+        ["9999 modelos", "", "", ""]
     } else {
-        ["100%", "999G", "999M"]
+        ["100%", "999G", "999M", "100%"]
     };
-    let font = NSFont::monospacedDigitSystemFontOfSize_weight(11., unsafe { NSFontWeightRegular });
+    let font = NSFont::monospacedDigitSystemFontOfSize_weight(10., unsafe { NSFontWeightRegular });
     let attrs =
         NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[&*font as &AnyObject]);
     // Fixed, bounded numeric columns. Right alignment keeps both outside margins at 4 pt.
     // Changes in digits, alert severity or connectivity never resize the menu-bar item.
     let mut items = Vec::new();
-    for i in 0..3 {
+    for metric in c.bar_order {
+        let i = metric.index();
         if !enabled[i] {
             continue;
         }
@@ -566,7 +760,7 @@ pub fn bar(state: &State) -> BarArtwork {
             .as_ref()
             .map(|symbol| {
                 let size = symbol.size();
-                let scale = (13. / size.width).min(13. / size.height);
+                let scale = (9. / size.width).min(9. / size.height);
                 ((size.width * scale).ceil(), (size.height * scale).ceil())
             })
             .unwrap_or((0., 0.));
@@ -574,14 +768,13 @@ pub fn bar(state: &State) -> BarArtwork {
         let text_width =
             unsafe { NSString::from_str(capacities[i]).sizeWithAttributes(Some(&attrs)) }
                 .width
-                .ceil()
-                + 2.;
+                .ceil();
         let actual_width =
             unsafe { NSString::from_str(&values[i]).sizeWithAttributes(Some(&attrs)) }
                 .width
                 .ceil()
                 + 1.;
-        let gap = if symbol.is_some() { 3. } else { 0. };
+        let gap = if symbol.is_some() { 1. } else { 0. };
         items.push((
             symbol,
             w,
@@ -593,12 +786,12 @@ pub fn bar(state: &State) -> BarArtwork {
             levels[i],
         ));
     }
-    const SEPARATOR_GAP: f64 = 8.;
+    const ITEM_GAP: f64 = 2.;
     let width = items
         .iter()
         .map(|(_, w, _, _, tw, _, gap, _)| w + gap + tw)
         .sum::<f64>()
-        + SEPARATOR_GAP * items.len().saturating_sub(1) as f64;
+        + ITEM_GAP * items.len().saturating_sub(1) as f64;
     let image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(width.max(1.), 18.));
     #[allow(deprecated)]
     image.lockFocusFlipped(true);
@@ -608,12 +801,7 @@ pub fn bar(state: &State) -> BarArtwork {
     let mut x = 0.;
     for (index, (symbol, w, h, value, tw, actual_width, gap, level)) in items.iter().enumerate() {
         if index > 0 {
-            fill(
-                rect(x + SEPARATOR_GAP / 2. - 0.25, 4., 0.5, 10.),
-                &NSColor::blackColor().colorWithAlphaComponent(0.2),
-                0.,
-            );
-            x += SEPARATOR_GAP;
+            x += ITEM_GAP;
         }
         if let Some(symbol) = symbol {
             unsafe {
@@ -627,9 +815,11 @@ pub fn bar(state: &State) -> BarArtwork {
                 );
             }
         }
-        let frame = rect(x + w + gap + tw - actual_width, 1., *actual_width, 16.);
+        // Center the visible capitals/digits, rather than the font's line box.
+        let text_y = 9. - font.ascender() + font.capHeight() / 2.;
+        let frame = rect(x + w + gap + tw - actual_width, text_y, *actual_width, 16.);
         if *level == AlertLevel::Normal {
-            text(value, frame, 11., &ink);
+            text(value, frame, 10., &ink);
         } else {
             alerts.push(AlertValue {
                 value: (*value).clone(),

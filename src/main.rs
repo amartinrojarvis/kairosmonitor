@@ -7,6 +7,7 @@ mod settings;
 mod ui;
 mod update_window;
 mod updates;
+mod usage;
 use config::Config;
 
 fn main() {
@@ -67,11 +68,12 @@ fn main() {
                     return;
                 }
                 println!(
-                    "{} · GPU {} · RAM {} · {} tok/s",
+                    "{} · GPU {} · RAM {} · {} tok/s · GPT semanal {}",
                     s.s("/hostname"),
                     s.bar()[0],
                     s.bar()[1],
-                    s.bar()[2]
+                    s.bar()[2],
+                    model::percent(usage::used(s.usage()))
                 );
                 return;
             }

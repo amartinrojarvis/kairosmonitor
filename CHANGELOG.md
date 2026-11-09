@@ -1,5 +1,29 @@
 # Cambios
 
+## 0.5.2
+
+- Historial de tokens/s encima del gráfico de uso semanal de ChatGPT en el desplegable, manteniendo la altura del panel y los controles inferiores.
+- Indicador independiente del porcentaje semanal oficial de GPT y gráfico de ritmo adaptado de Kairos Dash, con límite proporcional, días y reinicio.
+- Barra compacta sin separadores, con iconos y cifras alineados verticalmente.
+- Orden de las métricas editable con flechas en Ajustes, con vista previa inmediata y aplicación al guardar.
+
+## 0.5.1
+
+Versión local de desarrollo, incluida en la publicación 0.5.2.
+
+- Barra sin separadores, con iconos y cifras centrados verticalmente y posiciones estables.
+- Orden configurable con flechas a izquierda y derecha bajo cada métrica en Ajustes; las casillas se mueven con sus elementos.
+- Vista previa que refleja el orden y las métricas seleccionadas antes de guardar. El orden se conserva entre aperturas y actualizaciones.
+
+## 0.5.0
+
+Versión local de desarrollo, incluida en la publicación 0.5.2.
+
+- Indicador independiente de uso semanal de GPT en la barra, configurable desde Ajustes.
+- Gráfico de ritmo semanal adaptado de Kairos Dash: uso real, límite proporcional exacto, diferencia, días del ciclo y reinicio.
+- Lectura oficial de Kairos cada 15 segundos como máximo; sin estimaciones de consumo ni datos antiguos tras un error.
+- Barra más compacta para incorporar GPT sin aumentar el ancho respecto a las tres métricas anteriores.
+
 ## 0.4.4
 
 - Ajustes rediseñados en dos columnas, con secciones de conexión, apariencia, actualización, inicio y avisos.

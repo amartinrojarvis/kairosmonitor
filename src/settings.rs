@@ -8,6 +8,8 @@ use objc2_app_kit::*;
 use objc2_foundation::*;
 use std::cell::Cell;
 
+#[path = "settings_order.rs"]
+mod order;
 #[path = "settings_palette.rs"]
 mod palette;
 
@@ -16,7 +18,7 @@ pub struct Settings {
     fields: Vec<(&'static str, Retained<NSTextField>)>,
     graph: Retained<NSButton>,
     background: Retained<palette::Palette>,
-    metrics: Vec<Retained<NSButton>>,
+    metrics: Retained<order::MetricOrder>,
     login: Retained<NSButton>,
     error: Retained<NSTextField>,
     models: Retained<NSTextField>,
@@ -256,33 +258,30 @@ impl Settings {
             mtm,
             rect(444., 304., 412., 314.),
             "Apariencia",
-            "Elige qué ver y dale un toque de color a la barra.",
+            "Orden de izquierda a derecha · usa las flechas.",
         );
-        let mut metrics = Vec::new();
-        for (title, x) in [("GPU (%)", 20.), ("RAM (GiB)", 142.), ("Tokens/s", 274.)] {
-            metrics.push(checkbox(&appearance, mtm, title, rect(x, 226., 118., 24.)));
-        }
         label(
             &appearance,
             mtm,
             "Fondo de color",
-            rect(20., 200., 364., 20.),
+            rect(20., 180., 364., 20.),
             12.,
         );
         let background = palette::Palette::new(mtm, &appearance);
-        secondary(&appearance, mtm, "Claro", rect(20., 116., 174., 16.));
-        secondary(&appearance, mtm, "Oscuro", rect(206., 116., 174., 16.));
+        let metrics = order::MetricOrder::new(mtm, &appearance, &background);
+        secondary(&appearance, mtm, "Claro", rect(20., 96., 174., 16.));
+        secondary(&appearance, mtm, "Oscuro", rect(206., 96., 174., 16.));
         secondary(
             &appearance,
             mtm,
             "Vista previa · valores de ejemplo",
-            rect(20., 52., 364., 18.),
+            rect(20., 32., 364., 18.),
         );
         let graph = checkbox(
             &appearance,
             mtm,
             "Mostrar gráfico de tokens/s en el panel",
-            rect(20., 16., 370., 24.),
+            rect(20., 8., 370., 24.),
         );
 
         let alerts = card(
@@ -374,17 +373,7 @@ impl Settings {
         } else {
             NSControlStateValueOff
         });
-        for (checkbox, enabled) in self
-            .metrics
-            .iter()
-            .zip([c.show_gpu, c.show_memory, c.show_tps])
-        {
-            checkbox.setState(if enabled {
-                NSControlStateValueOn
-            } else {
-                NSControlStateValueOff
-            });
-        }
+        self.metrics.populate(c);
         self.login.setState(if crate::login::enabled() {
             NSControlStateValueOn
         } else {
@@ -413,9 +402,13 @@ impl Settings {
         let mut base = base.clone();
         base.service = "auto".into();
         base.bar_background = self.background.selected();
-        base.show_gpu = self.metrics[0].state() == NSControlStateValueOn;
-        base.show_memory = self.metrics[1].state() == NSControlStateValueOn;
-        base.show_tps = self.metrics[2].state() == NSControlStateValueOn;
+        [
+            base.show_gpu,
+            base.show_memory,
+            base.show_tps,
+            base.show_gpt,
+        ] = self.metrics.enabled();
+        base.bar_order = self.metrics.order();
         base.edited(
             &values,
             self.graph.state() == NSControlStateValueOn,
@@ -515,6 +508,8 @@ pub fn snapshot(config: &Config, path: &str) {
     let settings = Settings::new(mtm, &target);
     settings.populate(config);
     settings.background.verify_actions();
+    settings.metrics.verify_actions();
+    assert_eq!(settings.read(config).unwrap().bar_order, config.bar_order);
     let edited = settings
         .read(config)
         .expect("The populated form must remain valid");

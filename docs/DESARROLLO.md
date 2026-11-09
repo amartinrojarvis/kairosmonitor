@@ -91,6 +91,24 @@ Los símbolos y cifras normales se dibujan como plantilla nativa. `AlertOverlay`
 
 En 0.4.0 el texto «cada 2 s» ocupaba el mismo espacio que Actualizaciones. Desde 0.4.1 la frecuencia está en la cabecera y el pie tiene una fila propia de 50 puntos, botones nativos de 30 puntos, iconos y márgenes uniformes. Usa `footer_buttons` y `footer_button_y` como fuente común para la UI y las capturas; no vuelvas a colocar texto libre encima de los botones. Los paneles con y sin gráfico tienen alturas diferentes.
 
+### Orden de los gráficos (0.5.2)
+
+El historial de tokens/s se dibuja antes del bloque GPT. Este bloque se desplaza 76 pt hacia abajo solo cuando `graph` está activo; sin historial conserva su posición. Se revisaron las capturas de ambos modos y sin conexión, manteniendo la altura y los controles del pie. La publicación 0.5.2 agrupa también los cambios de GPT y ordenación desarrollados localmente como 0.5.0 y 0.5.1.
+
+### Orden de la barra (0.5.1)
+
+`barOrder` guarda una permutación de `gpu`, `memory`, `tps`, `gpt`. Al migrar se conserva el orden histórico y se rechazan duplicados, omisiones o identificadores desconocidos. La visibilidad se guarda por identificador, independientemente del orden. `settings_order.rs` conserva los controles de cada métrica y los recoloca al pulsar las flechas; los extremos se deshabilitan y cada botón tiene etiqueta y ayuda accesibles. El estado es solo del formulario hasta Guardar; Cancelar y Probar conexión no modifican el orden aplicado. La vista previa de la paleta refleja orden y visibilidad, y el orden forma parte de la caché de la barra. La captura de Ajustes ejercita los target/action de las flechas y comprueba que mover una métrica no cambia su selección.
+
+Verificación local de 0.5.1: 28 pruebas superadas, formato y Clippy sin avisos; capturas nativas claras/oscuras, cifras máximas, desconexión y orden inverso mantienen 166 pt con cuatro métricas. Se comprobaron las flechas y la actualización de la vista previa en la app instalada, así como Cancelar y reabrir sin aplicar el cambio. El bundle instalado coincide con `dist/` y conserva el SHA-256 de la configuración anterior. No se publicó una release.
+
+### Uso semanal de GPT (0.5.0)
+
+`src/usage.rs` interpreta la ventana oficial y `weeklyPace` de Kairos Dash. El gráfico nativo conserva relleno real, línea proporcional naranja, diferencia y divisiones reales de los días (no siete segmentos iguales). La fecha de reinicio se presenta en la zona horaria del Mac. La consulta auxiliar se deriva del endpoint `/api/metrics` y tiene una caché de 15 segundos por origen/prefijo, incluidos errores; no añade trabajadores ni temporizadores. Los fallos invalidan GPT sin ocultar hardware. `showGpt` es opcional y vale true al migrar configuraciones. Los umbrales de GPT siguen Dash: 70/90 %.
+
+La barra usa cifras de 10 puntos y símbolos de 9. Desde 0.5.1 no dibuja separadores: los iconos mantienen su posición, las cifras se alinean a la derecha dentro de su capacidad fija y ambos se centran según la altura de las cifras. Mantén las capacidades fijas y la caché sensible al nivel de aviso de GPT, incluso si el porcentaje redondeado no cambia. Desde 0.5.2 el historial de tokens/s aparece encima del gráfico semanal, conservando la altura del panel y el pie. El panel conserva el gráfico semanal en su posición superior si el historial de tokens/s está desactivado. `tests/fixtures/usage.json` contiene una lectura semanal sin metadatos de cuenta; para capturas se puede añadir como `chatgptUsage` a una copia temporal del fixture de métricas.
+
+Verificación local del 9 de noviembre de 2026 para 0.5.0: 27 tests, formato y Clippy sin avisos; bundle arm64 firmado y verificado; capturas con GPT, cifras máximas, sin red, sin historial de tokens y catálogo OpenAI. La barra mide 166 pt con cuatro indicadores frente a 168 pt con tres en 0.4.4; mantiene 166 pt con máximos y sin red. Se abrió el panel real con el 92 % publicado por Kairos y se comprobó la opción GPT en Ajustes. La instalación conserva el SHA-256 de la configuración y su binario coincide con `dist/`. Esta verificación corresponde a una instalación local; no se publicó una release ni se probó otro Mac o un reinicio físico.
+
 ### Modelos y conexión
 
 El formulario no requiere `service` ni nombres de modelo. Kairos permite inferir el servicio correspondiente a `vllmThroughput`; se excluyen servicios detenidos y alias de router del catálogo. OpenAI compatible muestra modelos sin inventar GPU/RAM/tokens/s. Se aceptan URLs base, `/v1` y endpoints completos; los prefijos de proxy deben conservarse.

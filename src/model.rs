@@ -128,6 +128,9 @@ impl Sample {
             endpoint: String::new(),
         })
     }
+    pub fn usage(&self) -> &Value {
+        &self.data["chatgptUsage"]
+    }
     pub fn active_service(&self) -> &Value {
         self.service(&self.selected_service)
     }

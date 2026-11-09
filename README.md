@@ -6,7 +6,7 @@ Monitor nativo para la barra de menús de macOS, escrito en Rust y AppKit. Telem
 
 ## Descargar e instalar
 
-[Descargar KairosMonitor 0.4.4 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.4.4/KairosMonitor-0.4.4-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
+[Descargar KairosMonitor 0.5.2 para Apple Silicon](https://github.com/amartinrojarvis/kairosmonitor/releases/download/v0.5.2/KairosMonitor-0.5.2-arm64.dmg) · [Todas las versiones](https://github.com/amartinrojarvis/kairosmonitor/releases)
 
 1. Abre el DMG y arrastra **KairosMonitor.app** a **Applications / Aplicaciones**.
 2. Abre la app. En el primer arranque aparecen los ajustes de conexión.
@@ -26,7 +26,9 @@ La distribución actual tiene firma **ad hoc**, sin Developer ID ni notarizació
 | `http://servidor:8000/v1` | Consulta `/v1/models`. |
 | `https://servidor/prefijo/v1/models` | Utiliza exactamente ese endpoint; admite rutas de proxy. |
 
-**Kairos**: descubre los modelos activos, evita duplicados y alias de enrutamiento, y selecciona automáticamente el servicio asociado al rendimiento publicado. El panel muestra GPU, temperatura, potencia, RAM, swap, rendimiento, CPU, carga, red, disco, modelo, contexto, consumidores e historial de tokens/s. Los servicios detenidos no conservan rendimiento antiguo.
+**Kairos**: descubre los modelos activos, evita duplicados y alias de enrutamiento, y selecciona automáticamente el servicio asociado al rendimiento publicado. El panel sitúa el historial de tokens/s encima del gráfico semanal de GPT de Kairos Dash (uso real frente al límite proporcional al tiempo, marcas de días, margen o exceso y reinicio) y muestra GPU, temperatura, potencia, RAM, swap, rendimiento, CPU, carga, red, disco, modelo, contexto, consumidores e historial de tokens/s. Los servicios detenidos no conservan rendimiento antiguo.
+
+**GPT / Codex**: el indicador `✦` muestra el porcentaje semanal usado, leído de `/api/chatgpt/usage-limits` del mismo servidor Kairos, con los prefijos de proxy conservados. Se consulta cada 15 segundos como máximo, comparte sesión y trabajador con las métricas y no requiere credenciales locales de Codex. Si la fuente falla o la sesión de Kairos caduca, se indica que no hay lectura oficial; el hardware sigue visible. Los avisos suaves afectan solo al porcentaje (70 % aviso, 90 % crítico, como Dash). El gráfico compara consumo oficial y presupuesto proporcional; este último describe el tiempo transcurrido, no estima tokens ni consumo.
 
 **OpenAI compatible**: descubre el catálogo publicado en `/v1/models`. La barra muestra el número de modelos y el panel sus nombres. Ese catálogo no incluye GPU, RAM ni tokens/s: para monitorizar esas métricas, utiliza el endpoint de Kairos. La prueba verifica acceso y formato del catálogo; no envía prompts ni ejecuta inferencias.
 
@@ -39,8 +41,9 @@ Esta versión no tiene campo para clave API: los endpoints que requieren autoriz
 - Clic izquierdo: abre o cierra el panel. Escape o clic fuera lo cierran.
 - El panel tiene una fila inferior separada con botones nativos de Refrescar, Dashboard, Actualizaciones, Ajustes y Salir. Sus iconos, fondos y áreas de clic permanecen visibles en todos los modos.
 - Clic derecho: abre el dashboard. Clic central: actualiza la lectura.
-- GPU, RAM y tokens/s se pueden mostrar por separado desde Ajustes; debe quedar al menos una métrica visible en el modo Kairos.
+- GPU, RAM, tokens/s y uso semanal de GPT se pueden mostrar por separado desde Ajustes; debe quedar al menos una métrica visible en el modo Kairos.
 - **Ancho fijo y compacto** para las métricas elegidas, cifras alineadas a la derecha y márgenes exteriores de 4 puntos. Cambiar cifras, entrar en aviso o perder la conexión no desplaza los demás widgets. Cambiar las métricas visibles o el tipo de servidor sí cambia el espacio necesario.
+- **Orden de los indicadores**: en Ajustes → Apariencia, usa las flechas bajo cada métrica para moverla a izquierda o derecha. Las casillas conservan su selección al moverlas y la vista previa refleja el resultado. Pulsa Guardar para aplicarlo; Cancelar conserva el orden anterior. La barra no lleva separadores: iconos y cifras quedan centrados verticalmente en sus columnas fijas.
 - Las cifras grandes se abrevian (`1.2k`, `12M`; memoria en `G`, `T`, `P`, `E`). La barra conserva el resaltado nativo, sin marcos laterales superpuestos.
 - **Fondo de color**, en Ajustes → Apariencia: sin color (predeterminado), azul suave, salvia, lavanda, arena, rosa suave o gris perla. La paleta muestra los tonos y marca el elegido; la vista previa clara y oscura usa valores de ejemplo y cambia al pulsar un color. Los tonos translúcidos distinguen el widget con discreción y se aplican al guardar.
 - **Solo la cifra afectada** cambia de color: ocre suave para aviso y rojo apagado para crítico, adaptados a apariencia clara y oscura. Los iconos, separadores y demás cifras mantienen el color nativo. Al pasar el puntero se explica el motivo.

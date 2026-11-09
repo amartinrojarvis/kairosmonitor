@@ -74,14 +74,15 @@ impl State {
                 }
                 let b = s.bar();
                 format!(
-                    "Kairos · GPU {} · RAM {} · {} tok/s. CPU {}. Modelo {}. {}\n{}",
+                    "Kairos · GPU {} · RAM {} · {} tok/s. CPU {}. Modelo {}. {}\n{}\nGPT semanal: {}",
                     b[0],
                     b[1],
                     b[2],
                     model::percent(s.n("/cpu/percent")),
                     s.model_summary(),
                     s.consumers(),
-                    s.alert_summary(&self.config)
+                    s.alert_summary(&self.config),
+                    model::percent(crate::usage::used(s.usage()))
                 )
             }
             None => format!("Kairos · {}", self.error),
@@ -414,7 +415,7 @@ impl App {
         }
         if let Some(button) = iv.status.get().and_then(|s| s.button(self.mtm())) {
             let key = format!(
-                "{:?}:{:?}:{:?}:{:?}:{}:{}:{}:{:?}",
+                "{:?}:{:?}:{:?}:{:?}:{}:{}:{}:{:?}:{}:{}:{:?}",
                 state.sample.as_ref().map(Sample::bar),
                 state.sample.as_ref().map(|s| s.bar_alerts(&state.config)),
                 state.kind,
@@ -422,7 +423,14 @@ impl App {
                 state.config.show_gpu,
                 state.config.show_memory,
                 state.config.show_tps,
-                state.config.bar_background
+                state.config.bar_background,
+                state.config.show_gpt,
+                state
+                    .sample
+                    .as_ref()
+                    .map(|s| crate::usage::used(s.usage()).to_string())
+                    .unwrap_or_default(),
+                state.config.bar_order
             );
             if *iv.last_bar.borrow() != key {
                 let artwork = drawing::bar(&state);

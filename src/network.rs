@@ -101,6 +101,7 @@ pub struct Client {
     session: Retained<NSURLSession>,
     delegate: Retained<NetworkDelegate>,
     endpoint: RefCell<Option<(String, String)>>,
+    usage_cache: RefCell<Option<(String, std::time::Instant, serde_json::Value)>>,
 }
 impl Client {
     pub fn new() -> Self {
@@ -123,6 +124,7 @@ impl Client {
             session,
             delegate,
             endpoint: RefCell::new(None),
+            usage_cache: RefCell::new(None),
         }
     }
     pub fn probe(&self, c: &Config) -> Result<Sample, String> {
@@ -158,6 +160,11 @@ impl Client {
             });
             match sample {
                 Ok(mut sample) => {
+                    if sample.kind == crate::model::ServerKind::Kairos
+                        && let Some(base) = endpoint.strip_suffix("/api/metrics")
+                    {
+                        sample.data["chatgptUsage"] = self.fetch_usage(base, c.timeout);
+                    }
                     sample.endpoint = endpoint.clone();
                     *self.endpoint.borrow_mut() = Some((c.url.clone(), endpoint));
                     return Ok(sample);
@@ -168,6 +175,23 @@ impl Client {
         Err(format!(
             "No se detectó un endpoint de Kairos ni un catálogo /v1/models · {last_error}"
         ))
+    }
+    fn fetch_usage(&self, base: &str, timeout: u64) -> serde_json::Value {
+        if let Some((key, fetched, data)) = self.usage_cache.borrow().as_ref()
+            && key == base
+            && fetched.elapsed().as_secs() < 15
+        {
+            return data.clone();
+        }
+        let data = self
+            .get(&format!("{base}/api/chatgpt/usage-limits"), timeout)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .filter(|v| v.is_object())
+            .unwrap_or_else(|| serde_json::json!({"ok":false}));
+        *self.usage_cache.borrow_mut() =
+            Some((base.into(), std::time::Instant::now(), data.clone()));
+        data
     }
     fn get(&self, endpoint: &str, timeout: u64) -> Result<Vec<u8>, String> {
         self.get_bounded(endpoint, timeout, MAX_BYTES)
@@ -365,6 +389,58 @@ mod tests {
                 assert_eq!(s.models, ["detected-model"]);
                 assert_eq!(s.kind, crate::model::ServerKind::OpenAI);
             }
+        });
+        server.join().unwrap();
+    }
+    #[test]
+    fn weekly_usage_is_cached_and_failure_does_not_hide_metrics() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let c = Config {
+            url: format!("{base}/api/metrics"),
+            timeout: 1,
+            ..Config::default()
+        };
+        let server = thread::spawn(move || {
+            for expected in ["/api/metrics", "/api/chatgpt/usage-limits", "/api/metrics"] {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                assert!(
+                    String::from_utf8(request)
+                        .unwrap()
+                        .starts_with(&format!("GET {expected} "))
+                );
+                let body = if expected.ends_with("usage-limits") {
+                    include_str!("../tests/fixtures/usage.json")
+                } else {
+                    r#"{"memory":{"percent":20}}"#
+                };
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+        });
+        objc2::rc::autoreleasepool(|_| {
+            let client = Client::new();
+            for _ in 0..2 {
+                let sample = client.fetch(&c).unwrap();
+                assert_eq!(sample.n("/memory/percent"), 20.);
+                assert_eq!(crate::usage::used(sample.usage()), 92.);
+            }
+            // Expire the cache. An unavailable auxiliary endpoint cannot invalidate telemetry.
+            *client.usage_cache.borrow_mut() = None;
+            assert_eq!(crate::usage::used(&client.fetch_usage(&base, 1)), -1.);
         });
         server.join().unwrap();
     }
